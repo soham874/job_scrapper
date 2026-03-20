@@ -1,9 +1,10 @@
 import csv
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from pathlib import Path
 
 from common.config import load_companies, WORKDAY_COL, JOBS_DIR, CRON_INTERVAL_SECONDS
+from common.constants import SEARCH_TEXT
 from common.logger import get_logger
 from borgs.workday.scraper import WorkdayScraper
 
@@ -11,6 +12,7 @@ logger = get_logger("workday")
 
 BORG_NAME = "workday"
 CSV_FIELDS = ["company", "title", "job_id", "location", "posted", "description"]
+MAX_WORKERS = 8
 
 
 def _save_results(results: list):
@@ -32,29 +34,44 @@ def _save_results(results: list):
     return filepath
 
 
+def _scrape_company(company: dict) -> list:
+    """Scrape a single company. Designed to run inside a thread pool."""
+    name = company["name"]
+    url = company["url"]
+    logger.info("Processing company: %s", name)
+    try:
+        scraper = WorkdayScraper(
+            base_url=url,
+            company_name=name,
+            search_text=SEARCH_TEXT,
+            facets=None,
+        )
+        return scraper.run()
+    except Exception:
+        logger.exception("Error processing company %s", name)
+        return []
+
+
 def run_once():
-    """Single execution: scrape all qualifying companies and save results."""
+    """Single execution: scrape all qualifying companies in parallel and save results."""
     logger.info("=== Workday borg run started ===")
     companies = load_companies(WORKDAY_COL)
     all_results = []
 
-    for company in companies:
-        name = company["name"]
-        url = company["url"]
-        logger.info("Processing company: %s", name)
-        try:
-            scraper = WorkdayScraper(
-                base_url=url,
-                company_name=name,
-                search_text="Senior Software Engineer",
-                facets=None,
-            )
-            results = scraper.run()
-            all_results.extend(results)
-        except Exception:
-            logger.exception("Error processing company %s", name)
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {
+            executor.submit(_scrape_company, company): company["name"]
+            for company in companies
+        }
+        for future in as_completed(futures):
+            company_name = futures[future]
+            try:
+                results = future.result()
+                all_results.extend(results)
+            except Exception:
+                logger.exception("Unhandled error for company %s", company_name)
 
-    filepath = _save_results(all_results)
+    _save_results(all_results)
     logger.info("=== Workday borg run finished | total jobs: %d ===", len(all_results))
     return all_results
 

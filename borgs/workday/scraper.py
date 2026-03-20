@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 
 from common.logger import get_logger
+from common.constants import INDIA_LOCATION_KEYWORDS, SEARCH_TEXT
 
 logger = get_logger("workday")
 
@@ -28,6 +29,8 @@ class WorkdayScraper:
         "locationCountry": ["c4f78be1a8f14da0ab49ce1162348a5e"],
         "locationRegionStateProvince": ["701eb5584934425d930bc84b9e8b04eb"],
     }
+
+    MAX_PAGES = 20  # Cap pagination to avoid crawling thousands of pages
 
     def __init__(self, base_url, company_name="unknown", search_text=None, facets=None, limit=20):
         self.company_name = company_name
@@ -71,14 +74,7 @@ class WorkdayScraper:
         if not loc_text:
             return False
         loc_text = loc_text.lower()
-        if "india" in loc_text:
-            return True
-        indian_cities = [
-            "bangalore", "bengaluru", "hyderabad", "pune",
-            "mumbai", "delhi", "noida", "gurgaon", "chennai",
-            "kolkata", "ahmedabad",
-        ]
-        return any(city in loc_text for city in indian_cities)
+        return any(kw in loc_text for kw in INDIA_LOCATION_KEYWORDS)
 
     @staticmethod
     def is_within_24h(posted_text):
@@ -102,10 +98,12 @@ class WorkdayScraper:
     def fetch_jobs(self):
         jobs = []
         seen = set()
+        page = 0
+        payload = dict(self.payload)  # local copy so the instance stays clean
 
-        while True:
+        while page < self.MAX_PAGES:
             try:
-                r = requests.post(self.list_url, headers=HEADERS, json=self.payload, timeout=30)
+                r = requests.post(self.list_url, headers=HEADERS, json=payload, timeout=30)
             except requests.RequestException:
                 logger.exception("Network error fetching jobs for %s", self.company_name)
                 break
@@ -115,7 +113,7 @@ class WorkdayScraper:
                     "Non-200 response (%s) for %s at offset %d",
                     r.status_code,
                     self.company_name,
-                    self.payload["offset"],
+                    payload["offset"],
                 )
                 break
 
@@ -140,18 +138,23 @@ class WorkdayScraper:
                     new_jobs += 1
 
             logger.debug(
-                "%s | offset %d -> %d new jobs",
+                "%s | page %d offset %d -> %d new jobs",
                 self.company_name,
-                self.payload["offset"],
+                page,
+                payload["offset"],
                 new_jobs,
             )
 
-            self.payload["offset"] += self.limit
+            payload["offset"] += self.limit
+            page += 1
 
             if len(postings) < self.limit:
                 break
 
             time.sleep(0.4)
+
+        if page >= self.MAX_PAGES:
+            logger.warning("%s | hit max page cap (%d), stopping pagination", self.company_name, self.MAX_PAGES)
 
         return jobs
 

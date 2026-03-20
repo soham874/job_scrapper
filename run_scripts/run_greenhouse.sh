@@ -5,7 +5,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
+# Activate venv if it exists
+if [ -f "$PROJECT_ROOT/venv/bin/activate" ]; then
+    source "$PROJECT_ROOT/venv/bin/activate"
+fi
+
 export PYTHONPATH="$PROJECT_ROOT"
 
-echo "[run_greenhouse] Starting Greenhouse borg..."
-python3 -m borgs.greenhouse.api
+echo "[run_greenhouse] Starting Greenhouse borg on port 5002..."
+python3 -m uvicorn borgs.greenhouse.api:app --host 0.0.0.0 --port 5002

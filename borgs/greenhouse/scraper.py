@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 from common.logger import get_logger
+from common.constants import TITLE_INCLUDE_KEYWORDS, TITLE_EXCLUDE_KEYWORDS, INDIA_LOCATION_KEYWORDS
 
 logger = get_logger("greenhouse")
 
@@ -26,13 +27,6 @@ def _extract_board_slug(url: str) -> str:
 
 
 class GreenhouseScraper:
-
-    INCLUDE_KEYWORDS = ["software", "engineer", "backend", "senior"]
-    EXCLUDE_KEYWORDS = ["analyst", "manager", "director", "staff", "principal", "android", "frontend"]
-    INDIA_KEYWORDS = [
-        "india", "bangalore", "bengaluru", "hyderabad", "pune",
-        "mumbai", "gurgaon", "gurugram", "noida", "chennai",
-    ]
 
     def __init__(self, greenhouse_url: str, company_name: str = "unknown"):
         self.company_name = company_name
@@ -78,24 +72,24 @@ class GreenhouseScraper:
                 continue
         return filtered
 
-    @classmethod
-    def _filter_by_title(cls, jobs):
+    @staticmethod
+    def _filter_by_title(jobs):
         filtered = []
         for job in jobs:
             title_lower = job.get("title", "").lower()
-            if any(kw in title_lower for kw in cls.EXCLUDE_KEYWORDS):
+            if any(kw in title_lower for kw in TITLE_EXCLUDE_KEYWORDS):
                 continue
-            if not any(kw in title_lower for kw in cls.INCLUDE_KEYWORDS):
+            if not any(kw in title_lower for kw in TITLE_INCLUDE_KEYWORDS):
                 continue
             filtered.append(job)
         return filtered
 
-    @classmethod
-    def _is_india_location(cls, location_str):
+    @staticmethod
+    def _is_india_location(location_str):
         if not location_str:
             return False
         location_str = location_str.lower()
-        return any(kw in location_str for kw in cls.INDIA_KEYWORDS)
+        return any(kw in location_str for kw in INDIA_LOCATION_KEYWORDS)
 
     @classmethod
     def _filter_india_jobs(cls, jobs):

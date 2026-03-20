@@ -13,11 +13,11 @@ job-scrapper/
 │   ├── workday/          # Workday borg
 │   │   ├── scraper.py    # WorkdayScraper (from POC notebook)
 │   │   ├── cron.py       # Hourly cron loop + CSV writer
-│   │   └── api.py        # Flask API (health + trigger)
+│   │   └── api.py        # FastAPI (health + trigger)
 │   └── greenhouse/       # Greenhouse borg
 │       ├── scraper.py    # GreenhouseScraper (from POC notebook)
 │       ├── cron.py       # Hourly cron loop + CSV writer
-│       └── api.py        # Flask API (health + trigger)
+│       └── api.py        # FastAPI (health + trigger)
 ├── run_scripts/          # Bash launchers
 │   ├── run_workday.sh
 │   ├── run_greenhouse.sh
@@ -31,6 +31,8 @@ job-scrapper/
 ## Setup
 
 ```bash
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -63,7 +65,7 @@ Each borg exposes:
 
 ## Cron
 
-Each borg runs an automatic scrape every **1 hour** in a background thread. Results are saved to `jobs/<borg>_<UTC timestamp>.csv`.
+Each borg runs an automatic scrape every **1 hour** in a background thread. Companies are scraped **in parallel** (8 workers) for speed. Results are saved to `jobs/<borg>_<UTC timestamp>.csv`.
 
 ## Logs
 
