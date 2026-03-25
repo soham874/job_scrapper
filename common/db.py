@@ -138,30 +138,30 @@ def get_company_id(company_name: str) -> Optional[int]:
     return row[0] if row else None
 
 
-def upsert_job(company_id: int, ats_job_id: str, title: str,
+def insert_job(company_id: int, ats_job_id: str, title: str,
                location: str, description: str, application_link: str) -> bool:
     """
-    Insert a job into job_info. If ats_job_id already exists, update the row.
-    Returns True on success, False on failure.
+    Insert a job into job_info. If the job already exists (duplicate on
+    company_id + ats_job_id), log an info message and return False.
+    Returns True if a new row was inserted.
     """
     conn = get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
             "INSERT INTO job_info (company_id, ats_job_id, title, location, description, application_link) "
-            "VALUES (%s, %s, %s, %s, %s, %s) "
-            "ON DUPLICATE KEY UPDATE "
-            "  title=VALUES(title),"
-            "  location=VALUES(location),"
-            "  description=VALUES(description),"
-            "  application_link=VALUES(application_link)",
+            "VALUES (%s, %s, %s, %s, %s, %s)",
             (company_id, ats_job_id, title, location, description, application_link),
         )
         conn.commit()
         return True
+    except mysql.connector.IntegrityError:
+        conn.rollback()
+        logger.info("Job %s already present in table for company_id %d — skipping", ats_job_id, company_id)
+        return False
     except Exception:
         conn.rollback()
-        logger.exception("Failed to upsert job %s for company_id %d", ats_job_id, company_id)
+        logger.exception("Failed to insert job %s for company_id %d", ats_job_id, company_id)
         return False
     finally:
         cursor.close()

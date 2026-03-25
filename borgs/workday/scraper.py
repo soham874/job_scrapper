@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 
 from common.logger import get_logger
-from common.constants import INDIA_LOCATION_KEYWORDS, SEARCH_TEXT
+from common.constants import INDIA_LOCATION_KEYWORDS, SEARCH_TEXT, TITLE_INCLUDE_KEYWORDS, TITLE_EXCLUDE_KEYWORDS
 
 logger = get_logger("workday")
 
@@ -180,6 +180,22 @@ class WorkdayScraper:
         return soup.get_text(separator="\n").strip()
 
     # ------------------------------------------------------------------
+    # Title filtering
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _filter_by_title(results):
+        filtered = []
+        for job in results:
+            title_lower = job.get("title", "").lower()
+            if any(kw in title_lower for kw in TITLE_EXCLUDE_KEYWORDS):
+                continue
+            if not any(kw in title_lower for kw in TITLE_INCLUDE_KEYWORDS):
+                continue
+            filtered.append(job)
+        return filtered
+
+    # ------------------------------------------------------------------
     # Main entry point — returns structured results
     # ------------------------------------------------------------------
 
@@ -216,4 +232,7 @@ class WorkdayScraper:
             time.sleep(0.3)
 
         logger.info("%s | %d jobs with details fetched", self.company_name, len(results))
-        return results
+
+        filtered = self._filter_by_title(results)
+        logger.info("%s | %d jobs after title filter", self.company_name, len(filtered))
+        return filtered

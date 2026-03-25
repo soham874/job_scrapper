@@ -20,8 +20,8 @@ TITLE_EXCLUDE_KEYWORDS = [
     "support", "technical support", "it support", "helpdesk",
     "sysadmin", "system administrator", "network engineer", "it engineer",
     "devops", "site reliability", "sre",  # only exclude if you want pure SWE
-    "data analyst", "business analyst", "product manager", "project manager",
-    "scrum master", "agile coach",
+    "data", "business", "manager",
+    "scrum master", "agile coach", "analyst", "quality", 
 
     # Non-software engineering domains
     "hardware", "embedded", "firmware",  # exclude if you're not targeting these
@@ -34,7 +34,7 @@ TITLE_EXCLUDE_KEYWORDS = [
     "contract", "contractor", "temporary", "temp", "freelance", "part-time", "part time",
 
     # Management / leadership (if you want IC roles only)
-    "manager", "director", "vp", "vice president", "head", "chief", "cto", "lead", "principal",
+    "manager", "director", "vp", "vice president", "head", "chief", "cto", "lead", "principal", "staff",
 
     # Non-tech fluff titles
     "consultant", "advisor", "specialist", "coordinator", "assistant",
