@@ -9,8 +9,50 @@ TITLE_INCLUDE_KEYWORDS = [
 
 # Job title keywords — if any match the job is excluded (case-insensitive)
 TITLE_EXCLUDE_KEYWORDS = [
-    "analyst", "manager", "director", "staff", "principal",
-    "android", "frontend",
+    # Junior / entry-level signals
+    "junior", "jr", "jr.", "entry level", "entry-level", "fresher", "graduate", "intern", "internship", "trainee", "apprentice",
+
+    # Mid-level ambiguity (you said senior, so be strict)
+    "associate", "mid-level", "mid level", "intermediate", "level 1", "level i", "l1", "level 2", "level ii", "l2",
+
+    # Non-engineering / adjacent roles
+    "qa", "tester", "test engineer", "sdet", "automation tester", "manual tester",
+    "support", "technical support", "it support", "helpdesk",
+    "sysadmin", "system administrator", "network engineer", "it engineer",
+    "devops", "site reliability", "sre",  # only exclude if you want pure SWE
+    "data analyst", "business analyst", "product manager", "project manager",
+    "scrum master", "agile coach",
+
+    # Non-software engineering domains
+    "hardware", "embedded", "firmware",  # exclude if you're not targeting these
+    "electrical", "mechanical", "civil",
+
+    # Design / frontend-only (optional depending on your goal)
+    "ui", "ux", "designer", "web designer", "frontend intern",
+
+    # Non-full-time / contract noise
+    "contract", "contractor", "temporary", "temp", "freelance", "part-time", "part time",
+
+    # Management / leadership (if you want IC roles only)
+    "manager", "director", "vp", "vice president", "head", "chief", "cto", "lead", "principal",
+
+    # Non-tech fluff titles
+    "consultant", "advisor", "specialist", "coordinator", "assistant",
+
+    # Sales / marketing disguised as tech
+    "sales", "pre-sales", "presales", "marketing", "growth", "seo",
+
+    # Weird startup nonsense titles
+    "ninja", "rockstar", "guru", "wizard", "evangelist", "hacker", "champion",
+
+    # Academic / research roles (optional)
+    "researcher", "research assistant", "phd", "postdoc", "fellow",
+
+    # Language / tech-specific junior traps
+    "wordpress", "shopify", "wix", "webflow",
+
+    # Misc filters that often pollute results
+    "trainer", "instructor", "faculty", "teacher"
 ]
 
 # Location keywords used to detect India-based roles (case-insensitive)

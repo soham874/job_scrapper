@@ -1,36 +1,42 @@
-import csv
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
 
-from common.config import load_companies, GREENHOUSE_COL, JOBS_DIR, CRON_INTERVAL_SECONDS
+from common.config import CRON_INTERVAL_SECONDS
+from common.db import load_companies_by_ats, get_company_id, upsert_job
 from common.logger import get_logger
 from borgs.greenhouse.scraper import GreenhouseScraper
 
 logger = get_logger("greenhouse")
 
 BORG_NAME = "greenhouse"
-CSV_FIELDS = ["company", "title", "job_id", "location", "posted", "description"]
 MAX_WORKERS = 8
 
 
 def _save_results(results: list):
-    """Save results to jobs/greenhouse_<timestamp>.csv"""
+    """Upsert results into the job_info table."""
     if not results:
-        logger.info("No results to save — skipping file write")
-        return None
+        logger.info("No results to save — skipping DB write")
+        return 0
 
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    filename = f"{BORG_NAME}_{ts}.csv"
-    filepath = JOBS_DIR / filename
+    saved = 0
+    for job in results:
+        company_id = get_company_id(job["company"])
+        if company_id is None:
+            logger.warning("Company '%s' not found in DB — skipping job %s", job["company"], job["job_id"])
+            continue
+        ok = upsert_job(
+            company_id=company_id,
+            ats_job_id=job["job_id"],
+            title=job.get("title", ""),
+            location=job.get("location", ""),
+            description=job.get("description", ""),
+            application_link=job.get("application_link", ""),
+        )
+        if ok:
+            saved += 1
 
-    with open(filepath, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
-        writer.writeheader()
-        writer.writerows(results)
-
-    logger.info("Saved %d jobs to %s", len(results), filepath)
-    return filepath
+    logger.info("Saved %d / %d jobs to DB", saved, len(results))
+    return saved
 
 
 def _scrape_company(company: dict) -> list:
@@ -43,7 +49,11 @@ def _scrape_company(company: dict) -> list:
             greenhouse_url=url,
             company_name=name,
         )
-        return scraper.run()
+        results = scraper.run()
+        # Attach application_link to each result
+        for r in results:
+            r["application_link"] = f"https://boards.greenhouse.io/{scraper.slug}/jobs/{r['job_id']}"
+        return results
     except Exception:
         logger.exception("Error processing company %s", name)
         return []
@@ -52,7 +62,7 @@ def _scrape_company(company: dict) -> list:
 def run_once():
     """Single execution: scrape all qualifying companies in parallel and save results."""
     logger.info("=== Greenhouse borg run started ===")
-    companies = load_companies(GREENHOUSE_COL)
+    companies = load_companies_by_ats("greenhouse")
     all_results = []
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:

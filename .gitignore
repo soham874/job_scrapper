@@ -2,3 +2,5 @@
 /Company \info.xlsx
 /jobs
 /logs
+*.db
+.env

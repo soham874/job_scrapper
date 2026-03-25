@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from common.logger import get_logger
+from common.db import run_migrations
 from borgs.greenhouse.cron import run_once, start_cron
 
 logger = get_logger("greenhouse")
@@ -10,6 +11,7 @@ logger = get_logger("greenhouse")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    run_migrations()
     start_cron()
     yield
 

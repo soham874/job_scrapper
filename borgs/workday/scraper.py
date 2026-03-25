@@ -210,6 +210,7 @@ class WorkdayScraper:
                     "location": info.get("location", ""),
                     "posted": info.get("postedOn", ""),
                     "description": self.clean_html(info.get("jobDescription", "")),
+                    "external_path": path,
                 }
             )
             time.sleep(0.3)
