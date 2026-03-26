@@ -119,6 +119,10 @@ def run_migrations():
             )
             conn.commit()
             logger.info("Migration %s applied successfully", version)
+        except mysql.connector.IntegrityError:
+            # Another process already applied this migration concurrently — safe to skip
+            conn.rollback()
+            logger.info("Migration %s already recorded by another process — skipping", version)
         except Exception:
             conn.rollback()
             logger.exception("Migration %s FAILED", version)
@@ -139,29 +143,58 @@ def get_company_id(company_name: str) -> Optional[int]:
 
 
 def insert_job(company_id: int, ats_job_id: str, title: str,
-               location: str, description: str, application_link: str) -> bool:
+               location: str, application_link: str) -> Optional[int]:
     """
     Insert a job into job_info. If the job already exists (duplicate on
-    company_id + ats_job_id), log an info message and return False.
-    Returns True if a new row was inserted.
+    company_id + ats_job_id), log an info message and return None.
+    Returns the new row's id if a row was inserted, None otherwise.
     """
     conn = get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "INSERT INTO job_info (company_id, ats_job_id, title, location, description, application_link) "
-            "VALUES (%s, %s, %s, %s, %s, %s)",
-            (company_id, ats_job_id, title, location, description, application_link),
+            "INSERT INTO job_info (company_id, ats_job_id, title, location, application_link) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (company_id, ats_job_id, title, location, application_link),
+        )
+        conn.commit()
+        return cursor.lastrowid
+    except mysql.connector.IntegrityError:
+        conn.rollback()
+        logger.info("Job %s already present in table for company_id %d — skipping", ats_job_id, company_id)
+        return None
+    except Exception:
+        conn.rollback()
+        logger.exception("Failed to insert job %s for company_id %d", ats_job_id, company_id)
+        return None
+    finally:
+        cursor.close()
+
+
+def insert_job_analysis(job_id: int, relevance_score: int,
+                        positive_matches: str, negative_matches: str,
+                        experience_matches: str) -> bool:
+    """
+    Insert an analysis row for a job. The match columns expect JSON-encoded strings.
+    Returns True on success, False on failure.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO job_analysis (job_id, relevance_score, positive_matches, "
+            "negative_matches, experience_matches) VALUES (%s, %s, %s, %s, %s)",
+            (job_id, relevance_score, positive_matches, negative_matches, experience_matches),
         )
         conn.commit()
         return True
     except mysql.connector.IntegrityError:
         conn.rollback()
-        logger.info("Job %s already present in table for company_id %d — skipping", ats_job_id, company_id)
+        logger.info("Analysis for job_id %d already exists — skipping", job_id)
         return False
     except Exception:
         conn.rollback()
-        logger.exception("Failed to insert job %s for company_id %d", ats_job_id, company_id)
+        logger.exception("Failed to insert analysis for job_id %d", job_id)
         return False
     finally:
         cursor.close()

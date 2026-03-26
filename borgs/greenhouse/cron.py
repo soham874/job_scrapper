@@ -1,8 +1,11 @@
+import json
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from common.config import CRON_INTERVAL_SECONDS
-from common.db import load_companies_by_ats, insert_job
+from common.analyzer import analyze_description
+from common.constants import DESC_SCORE_THRESHOLD
+from common.db import load_companies_by_ats, insert_job, insert_job_analysis
 from common.logger import get_logger
 from borgs.greenhouse.scraper import GreenhouseScraper
 
@@ -25,19 +28,32 @@ def _scrape_and_save(company: dict) -> int:
         )
         results = scraper.run()
         saved = 0
+        discarded = 0
         for r in results:
-            r["application_link"] = f"https://boards.greenhouse.io/{scraper.slug}/jobs/{r['job_id']}"
-            ok = insert_job(
+            analysis = analyze_description(r.get("description", ""))
+            if analysis["score"] < DESC_SCORE_THRESHOLD:
+                logger.debug("%s | job %s score %d < %d — discarding",
+                             name, r["job_id"], analysis["score"], DESC_SCORE_THRESHOLD)
+                discarded += 1
+                continue
+            job_row_id = insert_job(
                 company_id=company_id,
-                ats_job_id=r["job_id"],
+                ats_job_id=r.get("requisition_id", r["job_id"]),
                 title=r.get("title", ""),
                 location=r.get("location", ""),
-                description=r.get("description", ""),
-                application_link=r["application_link"],
+                application_link=r.get("absolute_url", ""),
             )
-            if ok:
+            if job_row_id:
+                insert_job_analysis(
+                    job_id=job_row_id,
+                    relevance_score=analysis["score"],
+                    positive_matches=json.dumps(analysis["positive_matches"]),
+                    negative_matches=json.dumps(analysis["negative_matches"]),
+                    experience_matches=json.dumps(analysis["experience_matches"]),
+                )
                 saved += 1
-        logger.info("%s | saved %d / %d jobs to DB", name, saved, len(results))
+        logger.info("%s | saved %d / %d jobs to DB (%d discarded by score)",
+                    name, saved, len(results), discarded)
         return len(results)
     except Exception:
         logger.exception("Error processing company %s", name)

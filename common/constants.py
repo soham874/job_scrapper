@@ -1,3 +1,5 @@
+import re as _re
+
 # ---------------------------------------------------------------------------
 # Shared filter constants used by all borgs
 # ---------------------------------------------------------------------------
@@ -72,3 +74,64 @@ INDIA_LOCATION_KEYWORDS = [
 
 # Default search text sent to APIs that support server-side search
 SEARCH_TEXT = "Senior Software Engineer"
+
+# ---------------------------------------------------------------------------
+# Description analysis — weighted keyword matching for relevance scoring
+# ---------------------------------------------------------------------------
+
+# Positive signals: keyword → weight
+DESC_POSITIVE_KEYWORDS = {
+    # Languages
+    "java": 2, "python": 2,
+
+    # AI / GenAI
+    "generative ai": 3, "genai": 3, "large language model": 3,
+    "rag": 3, "retrieval augmented generation": 3,
+    "langchain": 2, "vector database": 2, "embeddings": 2,
+    "prompt engineering": 2, "fine-tuning": 2, "ai agents": 3,
+    "openai": 2, "llm orchestration": 3, "ai infrastructure": 3,
+
+    # Backend / infrastructure
+    "microservices": 3, "distributed systems": 3, "api": 3, "rest": 3,
+    "grpc": 3, "graphql": 3, "event-driven": 3, "kafka": 3, "rabbitmq": 3,
+
+    # Cloud / devops
+    "aws": 2, "gcp": 2, "azure": 2, "kubernetes": 2, "k8s": 2,
+    "docker": 2, "terraform": 2, "ci/cd": 2,
+
+    # Data stores
+    "sql": 2, "nosql": 2, "postgresql": 2, "mysql": 2, "redis": 2,
+    "elasticsearch": 2, "dynamodb": 2, "mongodb": 2, "cassandra": 2,
+    # Architecture / design
+    "system design": 3, "scalability": 3, "concurrency": 3,
+    "high availability": 3, "fault tolerance": 3, "caching": 3,
+    "load balancing": 3,
+}
+
+# Negative signals: keyword → weight (subtracted from score)
+DESC_NEGATIVE_KEYWORDS = {
+    # Frontend-only
+    "react": 2, "angular": 2, "vue": 2, "css": 2, "html": 2,
+
+    # Mobile
+    "ios": 2, "android": 2, "swift": 2, "objective-c": 2, "flutter": 2,
+
+    # ML / AI focused
+    "machine learning": 2, "deep learning": 2,
+    "computer vision": 2, "model training": 2,
+
+    # Non-engineering
+    "sales": 3, "marketing": 3, "data science": 3, "data analyst": 3,
+    "recruiting": 3,
+}
+
+# Experience patterns: (regex_pattern, bonus)
+DESC_EXPERIENCE_PATTERNS = [
+    (_re.compile(r"\b[5-9]\+?\s*years", _re.IGNORECASE), 3),
+    (_re.compile(r"\b1[0-5]\+?\s*years", _re.IGNORECASE), 3),
+    (_re.compile(r"\bsenior\b", _re.IGNORECASE), 2),
+    (_re.compile(r"\bbackend\b", _re.IGNORECASE), 3),
+]
+
+# Minimum relevance score to keep a job (jobs below this are discarded)
+DESC_SCORE_THRESHOLD = 20

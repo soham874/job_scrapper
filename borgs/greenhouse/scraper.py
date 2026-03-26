@@ -155,9 +155,11 @@ class GreenhouseScraper:
                     "company": self.company_name,
                     "title": detail.get("title", ""),
                     "job_id": str(job_id),
+                    "requisition_id": detail.get("requisition_id", str(job_id)),
                     "location": detail.get("location", {}).get("name", "Unknown"),
                     "posted": detail.get("updated_at", "Unknown"),
                     "description": detail.get("content", ""),
+                    "absolute_url": detail.get("absolute_url", ""),
                 }
             )
 

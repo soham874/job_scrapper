@@ -1,9 +1,12 @@
+import json
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import urlparse
 
+from common.analyzer import analyze_description
 from common.config import CRON_INTERVAL_SECONDS
-from common.constants import SEARCH_TEXT
-from common.db import load_companies_by_ats, insert_job
+from common.constants import SEARCH_TEXT, DESC_SCORE_THRESHOLD
+from common.db import load_companies_by_ats, insert_job, insert_job_analysis
 from common.logger import get_logger
 from borgs.workday.scraper import WorkdayScraper
 
@@ -26,21 +29,42 @@ def _scrape_and_save(company: dict) -> int:
             search_text=SEARCH_TEXT,
             facets=None,
         )
+        # Build application URL prefix: scheme://host/locale/org
+        # e.g. https://expedia.wd108.myworkdayjobs.com/en-US/search
+        parsed = urlparse(url)
+        segments = [s for s in parsed.path.strip("/").split("/") if s]
+        # Keep locale (e.g. en-US) and org (e.g. search), drop the rest
+        app_url_prefix = f"{parsed.scheme}://{parsed.netloc}/{'/'.join(segments[:2])}"
+
         results = scraper.run()
         saved = 0
+        discarded = 0
         for r in results:
-            r["application_link"] = f"{scraper.base_url}{r.get('external_path', '')}"
-            ok = insert_job(
+            analysis = analyze_description(r.get("description", ""))
+            if analysis["score"] < DESC_SCORE_THRESHOLD:
+                logger.debug("%s | job %s score %d < %d — discarding",
+                             name, r["job_id"], analysis["score"], DESC_SCORE_THRESHOLD)
+                discarded += 1
+                continue
+            r["application_link"] = f"{app_url_prefix}{r.get('external_path', '')}"
+            job_row_id = insert_job(
                 company_id=company_id,
                 ats_job_id=r["job_id"],
                 title=r.get("title", ""),
                 location=r.get("location", ""),
-                description=r.get("description", ""),
                 application_link=r["application_link"],
             )
-            if ok:
+            if job_row_id:
+                insert_job_analysis(
+                    job_id=job_row_id,
+                    relevance_score=analysis["score"],
+                    positive_matches=json.dumps(analysis["positive_matches"]),
+                    negative_matches=json.dumps(analysis["negative_matches"]),
+                    experience_matches=json.dumps(analysis["experience_matches"]),
+                )
                 saved += 1
-        logger.info("%s | saved %d / %d jobs to DB", name, saved, len(results))
+        logger.info("%s | saved %d / %d jobs to DB (%d discarded by score)",
+                    name, saved, len(results), discarded)
         return len(results)
     except Exception:
         logger.exception("Error processing company %s", name)

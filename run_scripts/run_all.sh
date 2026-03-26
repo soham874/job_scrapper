@@ -12,6 +12,11 @@ fi
 
 export PYTHONPATH="$PROJECT_ROOT"
 
+# Run migrations once before starting any borgs
+echo "[run_all] Running database migrations..."
+python3 "$PROJECT_ROOT/run_scripts/run_migrations.py"
+echo "[run_all] Migrations complete."
+
 # Array of child PIDs
 CHILD_PIDS=()
 SHUTTING_DOWN=false
