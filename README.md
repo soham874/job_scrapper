@@ -67,6 +67,22 @@ Each borg exposes:
 
 Each borg runs an automatic scrape every **1 hour** in a background thread. Companies are scraped **in parallel** (8 workers) for speed. Results are saved to `jobs/<borg>_<UTC timestamp>.csv`.
 
+## Telegram Notifications (Optional)
+
+Get push notifications for new jobs via a Telegram bot. After each cron run, if new jobs were found, a batch summary is sent to your Telegram chat.
+
+### Setup
+
+1. **Create a bot**: message [@BotFather](https://t.me/BotFather) on Telegram, send `/newbot`, and follow the prompts. Copy the **bot token**.
+2. **Get your chat ID**: message your new bot, then visit `https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates` — look for `"chat":{"id": ...}` in the response.
+3. **Set env vars** in your `.env` file:
+   ```
+   TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
+   TELEGRAM_CHAT_ID=987654321
+   ```
+
+If these vars are not set, the notifier is silently skipped and the scraper runs as usual.
+
 ## Logs
 
 Per-borg log files are written to the `logs/` directory:

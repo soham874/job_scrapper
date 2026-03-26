@@ -8,6 +8,7 @@ from common.config import CRON_INTERVAL_SECONDS
 from common.constants import SEARCH_TEXT, DESC_SCORE_THRESHOLD
 from common.db import load_companies_by_ats, insert_job, insert_job_analysis
 from common.logger import get_logger
+from common.notifier import notify_new_jobs
 from borgs.workday.scraper import WorkdayScraper
 
 logger = get_logger("workday")
@@ -16,12 +17,14 @@ BORG_NAME = "workday"
 MAX_WORKERS = 8
 
 
-def _scrape_and_save(company: dict) -> int:
-    """Scrape a single company and write results to DB immediately."""
+def _scrape_and_save(company: dict) -> list:
+    """Scrape a single company and write results to DB immediately.
+    Returns a list of dicts for newly saved jobs."""
     name = company["name"]
     url = company["url"]
     company_id = company["id"]
     logger.info("Processing company: %s", name)
+    new_jobs = []
     try:
         scraper = WorkdayScraper(
             base_url=url,
@@ -62,20 +65,27 @@ def _scrape_and_save(company: dict) -> int:
                     negative_matches=json.dumps(analysis["negative_matches"]),
                     experience_matches=json.dumps(analysis["experience_matches"]),
                 )
+                new_jobs.append({
+                    "company": name,
+                    "title": r.get("title", ""),
+                    "location": r.get("location", ""),
+                    "keywords": analysis["positive_matches"],
+                    "application_link": r["application_link"],
+                })
                 saved += 1
         logger.info("%s | saved %d / %d jobs to DB (%d discarded by score)",
                     name, saved, len(results), discarded)
-        return len(results)
+        return new_jobs
     except Exception:
         logger.exception("Error processing company %s", name)
-        return 0
+        return new_jobs
 
 
 def run_once():
     """Single execution: scrape all qualifying companies in parallel and save results."""
     logger.info("=== Workday borg run started ===")
     companies = load_companies_by_ats("workday")
-    total_jobs = 0
+    all_new_jobs = []
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = {
@@ -85,11 +95,12 @@ def run_once():
         for future in as_completed(futures):
             company_name = futures[future]
             try:
-                total_jobs += future.result()
+                all_new_jobs.extend(future.result())
             except Exception:
                 logger.exception("Unhandled error for company %s", company_name)
 
-    logger.info("=== Workday borg run finished | total jobs: %d ===", total_jobs)
+    logger.info("=== Workday borg run finished | new jobs: %d ===", len(all_new_jobs))
+    notify_new_jobs(BORG_NAME, all_new_jobs)
 
 
 def _cron_loop():
