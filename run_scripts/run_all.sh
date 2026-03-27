@@ -45,6 +45,10 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
+echo "[run_all] Starting Telegram bot (port 5000)..."
+python3 -m uvicorn common.bot:app --host 0.0.0.0 --port 5000 &
+CHILD_PIDS+=($!)
+
 echo "[run_all] Starting Workday borg (port 5001)..."
 python3 -m uvicorn borgs.workday.api:app --host 0.0.0.0 --port 5001 &
 CHILD_PIDS+=($!)
@@ -53,7 +57,7 @@ echo "[run_all] Starting Greenhouse borg (port 5002)..."
 python3 -m uvicorn borgs.greenhouse.api:app --host 0.0.0.0 --port 5002 &
 CHILD_PIDS+=($!)
 
-echo "[run_all] All borgs running. PIDs: ${CHILD_PIDS[*]}"
+echo "[run_all] All services running. PIDs: ${CHILD_PIDS[*]}"
 echo "[run_all] Press Ctrl-C to stop all."
 
 # Wait for all children — exits when they all finish or when interrupted

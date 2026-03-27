@@ -200,6 +200,57 @@ def insert_job_analysis(job_id: int, relevance_score: int,
         cursor.close()
 
 
+def update_job_decision(job_id: int, decision: str) -> bool:
+    """
+    Set the user_decision column for a job.
+    decision should be 'applied' or 'rejected'.
+    Returns True on success, False on failure.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE job_info SET user_decision = %s WHERE id = %s",
+            (decision, job_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception:
+        conn.rollback()
+        logger.exception("Failed to update decision for job_id %d", job_id)
+        return False
+    finally:
+        cursor.close()
+
+
+def get_job_by_id(job_id: int) -> Optional[dict]:
+    """
+    Return a job with its company name.
+    Keys: id, title, location, application_link, user_decision, company.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT j.id, j.title, j.location, j.application_link, j.user_decision, "
+        "c.company_name "
+        "FROM job_info j JOIN company_info c ON j.company_id = c.id "
+        "WHERE j.id = %s",
+        (job_id,),
+    )
+    row = cursor.fetchone()
+    cursor.close()
+    if not row:
+        return None
+    return {
+        "id": row[0],
+        "title": row[1],
+        "location": row[2],
+        "application_link": row[3],
+        "user_decision": row[4],
+        "company": row[5],
+    }
+
+
 def load_companies_by_ats(ats_name: str) -> list:
     """
     Return companies from the DB that use the given ATS.
