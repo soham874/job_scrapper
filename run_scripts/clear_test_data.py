@@ -3,7 +3,7 @@
 Run on every startup so the /test endpoint always gets a clean slate.
 """
 
-from common.db import get_connection
+from common.db.connection import get_connection
 from common.logger import get_logger
 
 logger = get_logger("clear_test_data")

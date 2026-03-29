@@ -5,9 +5,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from common.config import CRON_INTERVAL_SECONDS
 from common.analyzer import analyze_description
 from common.constants import DESC_SCORE_THRESHOLD
-from common.db import load_companies_by_ats, insert_job, insert_job_analysis
+from common.db.repository import load_companies_by_ats, insert_job, insert_job_analysis
 from common.logger import get_logger
-from common.notifier import notify_new_jobs
+from common.notifications.notifier import notify_new_jobs
 from borgs.greenhouse.scraper import GreenhouseScraper
 
 logger = get_logger("greenhouse")

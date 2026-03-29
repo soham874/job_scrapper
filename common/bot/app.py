@@ -1,24 +1,22 @@
+"""FastAPI application — thin HTTP routing layer for the Telegram bot.
+
+All business logic lives in bot.handlers; formatting in notifications.formatter;
+transport in notifications.telegram.  This file only wires routes.
+"""
+
 import os
 from contextlib import asynccontextmanager
-from datetime import date
 
 import requests
 from fastapi import FastAPI, Request
 
-from common.db import get_company_id, get_job_by_id, insert_job, insert_application_status, update_job_decision
+from common.bot.handlers import handle_decision
 from common.logger import get_logger
-from common.notifier import (
-    TELEGRAM_BOT_TOKEN,
-    _make_inline_keyboard,
-    answer_callback_query,
-    edit_telegram_message,
-    format_decided_message,
-    format_job_message,
-    send_applied_response,
-    send_telegram_message,
-)
+from common.db.repository import get_company_id, insert_job
+from common.notifications.formatter import format_job_message, make_inline_keyboard
+from common.notifications.telegram import TELEGRAM_BOT_TOKEN, answer_callback_query, send_message
 
-logger = get_logger("common.bot")
+logger = get_logger("bot.app")
 
 TELEGRAM_WEBHOOK_URL = os.getenv("TELEGRAM_WEBHOOK_URL", "")
 
@@ -83,8 +81,8 @@ def test_bot():
     }
 
     text = format_job_message(sample_job, index=1, total=1, borg_name="test")
-    keyboard = _make_inline_keyboard(job_id)
-    msg_id = send_telegram_message(text, reply_markup=keyboard)
+    keyboard = make_inline_keyboard(job_id)
+    msg_id = send_message(text, reply_markup=keyboard)
 
     return {"ok": True, "job_id": job_id, "message_id": msg_id}
 
@@ -124,42 +122,4 @@ async def telegram_webhook(request: Request):
         answer_callback_query(callback_id, "Invalid job ID")
         return {"ok": True}
 
-    decision = "applied" if action == "apply" else "rejected"
-
-    # Look up the job to check current state
-    job = get_job_by_id(job_id)
-    if not job:
-        answer_callback_query(callback_id, "Job not found")
-        return {"ok": True}
-
-    if job.get("user_decision"):
-        answer_callback_query(callback_id, f"Already marked as {job['user_decision']}")
-        return {"ok": True}
-
-    # Update DB
-    success = update_job_decision(job_id, decision)
-    if not success:
-        answer_callback_query(callback_id, "Failed to save decision")
-        return {"ok": True}
-
-    # Edit the Telegram message to show the decision and remove buttons
-    new_text = format_decided_message(job, decision)
-    edit_telegram_message(message_id, new_text)
-
-    label = "Applied ✅" if decision == "applied" else "Rejected ❌"
-    answer_callback_query(callback_id, label)
-
-    if decision == "applied":
-        # Send LinkedIn search link + referral message parts
-        send_applied_response(job)
-
-        # Record in application_status
-        insert_application_status(
-            company_id=job["company_id"],
-            job_id=job_id,
-            applied_on=date.today().isoformat(),
-            status="applied",
-        )
-
-    logger.info("Job %d marked as %s", job_id, decision)
-    return {"ok": True}
+    return handle_decision(callback_id, message_id, job_id, action)

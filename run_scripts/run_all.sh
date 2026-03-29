@@ -51,7 +51,7 @@ cleanup() {
 trap cleanup INT TERM EXIT
 
 echo "[run_all] Starting Telegram bot (port 5000)..."
-python3 -m uvicorn common.bot:app --host 0.0.0.0 --port 5000 &
+python3 -m uvicorn common.bot.app:app --host 0.0.0.0 --port 5000 &
 CHILD_PIDS+=($!)
 
 echo "[run_all] Starting Workday borg (port 5001)..."

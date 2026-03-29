@@ -6,9 +6,9 @@ from urllib.parse import urlparse
 from common.analyzer import analyze_description
 from common.config import CRON_INTERVAL_SECONDS
 from common.constants import SEARCH_TEXT, DESC_SCORE_THRESHOLD
-from common.db import load_companies_by_ats, insert_job, insert_job_analysis
+from common.db.repository import load_companies_by_ats, insert_job, insert_job_analysis
 from common.logger import get_logger
-from common.notifier import notify_new_jobs
+from common.notifications.notifier import notify_new_jobs
 from borgs.workday.scraper import WorkdayScraper
 
 logger = get_logger("workday")
