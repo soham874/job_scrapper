@@ -232,7 +232,7 @@ def get_job_by_id(job_id: int) -> Optional[dict]:
     cursor = conn.cursor()
     cursor.execute(
         "SELECT j.id, j.title, j.location, j.application_link, j.user_decision, "
-        "c.company_name "
+        "c.company_name, j.ats_job_id, j.company_id "
         "FROM job_info j JOIN company_info c ON j.company_id = c.id "
         "WHERE j.id = %s",
         (job_id,),
@@ -248,7 +248,37 @@ def get_job_by_id(job_id: int) -> Optional[dict]:
         "application_link": row[3],
         "user_decision": row[4],
         "company": row[5],
+        "ats_job_id": row[6],
+        "company_id": row[7],
     }
+
+
+def insert_application_status(company_id: int, job_id: int,
+                              applied_on: str, status: str = "applied") -> bool:
+    """
+    Insert a row into application_status when the user accepts a job.
+    Returns True on success, False on failure.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO application_status (company_id, job_id, applied_on, status) "
+            "VALUES (%s, %s, %s, %s)",
+            (company_id, job_id, applied_on, status),
+        )
+        conn.commit()
+        return True
+    except mysql.connector.IntegrityError:
+        conn.rollback()
+        logger.info("Application status for job_id %d already exists — skipping", job_id)
+        return False
+    except Exception:
+        conn.rollback()
+        logger.exception("Failed to insert application status for job_id %d", job_id)
+        return False
+    finally:
+        cursor.close()
 
 
 def load_companies_by_ats(ats_name: str) -> list:

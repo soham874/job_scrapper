@@ -17,6 +17,11 @@ echo "[run_all] Running database migrations..."
 python3 "$PROJECT_ROOT/run_scripts/run_migrations.py"
 echo "[run_all] Migrations complete."
 
+# Clear any leftover test data from previous runs
+echo "[run_all] Clearing test data..."
+python3 "$PROJECT_ROOT/run_scripts/clear_test_data.py"
+echo "[run_all] Test data cleared."
+
 # Array of child PIDs
 CHILD_PIDS=()
 SHUTTING_DOWN=false

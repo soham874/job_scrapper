@@ -1,16 +1,21 @@
 import os
 from contextlib import asynccontextmanager
+from datetime import date
 
 import requests
 from fastapi import FastAPI, Request
 
-from common.db import get_job_by_id, update_job_decision
+from common.db import get_company_id, get_job_by_id, insert_job, insert_application_status, update_job_decision
 from common.logger import get_logger
 from common.notifier import (
     TELEGRAM_BOT_TOKEN,
+    _make_inline_keyboard,
     answer_callback_query,
     edit_telegram_message,
     format_decided_message,
+    format_job_message,
+    send_applied_response,
+    send_telegram_message,
 )
 
 logger = get_logger("common.bot")
@@ -49,6 +54,39 @@ app = FastAPI(title="Job Scrapper Bot", lifespan=lifespan)
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "bot"}
+
+
+@app.get("/test")
+def test_bot():
+    """Send a sample job notification to Telegram for end-to-end testing."""
+    company_name = "Stripe"
+    company_id = get_company_id(company_name)
+    if not company_id:
+        return {"ok": False, "error": f"Company '{company_name}' not found in DB"}
+
+    ats_job_id = "TEST-12345"
+    title = "Senior Software Engineer, Backend"
+    location = "Bangalore, India"
+    link = "https://stripe.com/jobs/listing/senior-software-engineer/12345"
+
+    job_id = insert_job(company_id, ats_job_id, title, location, link)
+    if not job_id:
+        return {"ok": False, "error": "Job already exists or insert failed"}
+
+    sample_job = {
+        "company": company_name,
+        "title": title,
+        "location": location,
+        "keywords": ["java", "distributed systems", "kafka"],
+        "application_link": link,
+        "job_id": job_id,
+    }
+
+    text = format_job_message(sample_job, index=1, total=1, borg_name="test")
+    keyboard = _make_inline_keyboard(job_id)
+    msg_id = send_telegram_message(text, reply_markup=keyboard)
+
+    return {"ok": True, "job_id": job_id, "message_id": msg_id}
 
 
 @app.post("/telegram/webhook")
@@ -110,6 +148,18 @@ async def telegram_webhook(request: Request):
 
     label = "Applied ✅" if decision == "applied" else "Rejected ❌"
     answer_callback_query(callback_id, label)
+
+    if decision == "applied":
+        # Send LinkedIn search link + referral message parts
+        send_applied_response(job)
+
+        # Record in application_status
+        insert_application_status(
+            company_id=job["company_id"],
+            job_id=job_id,
+            applied_on=date.today().isoformat(),
+            status="applied",
+        )
 
     logger.info("Job %d marked as %s", job_id, decision)
     return {"ok": True}

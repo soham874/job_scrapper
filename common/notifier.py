@@ -1,5 +1,7 @@
 import os
+from pathlib import Path
 from typing import List, Dict, Optional
+from urllib.parse import quote
 
 import requests
 
@@ -161,3 +163,60 @@ def notify_new_jobs(borg_name: str, jobs: List[Dict[str, str]]) -> None:
         text = format_job_message(job, index=i, total=total, borg_name=borg_name)
         keyboard = _make_inline_keyboard(job["job_id"])
         send_telegram_message(text, reply_markup=keyboard)
+
+
+_TEMPLATE_DIR = Path(__file__).resolve().parent
+_LINKEDIN_MSG_TEMPLATE = _TEMPLATE_DIR / "linkedin_message_template.txt"
+
+
+def build_linkedin_search_url(company_name: str) -> str:
+    """Return a LinkedIn people-search URL for software engineers at the given company in Bangalore."""
+    encoded = quote(f"software engineer {company_name} bangalore")
+    return (
+        f"https://www.linkedin.com/search/results/people/"
+        f"?keywords={encoded}&origin=FACETED_SEARCH&pastCompany=%5B%229390173%22%5D"
+    )
+
+
+def format_referral_messages(title: str, company: str, job_id: str) -> List[str]:
+    """
+    Load the LinkedIn message template, replace placeholders, and split on '---'
+    dividers.  Returns a list of message parts ready to be sent as separate
+    Telegram messages.
+    """
+    try:
+        raw = _LINKEDIN_MSG_TEMPLATE.read_text(encoding="utf-8")
+    except Exception:
+        logger.exception("Failed to read LinkedIn message template")
+        return []
+
+    raw = raw.replace("<<TITLE>>", title)
+    raw = raw.replace("<<Company>>", company)
+    raw = raw.replace("<<JOB-ID>>", job_id)
+
+    parts = [part.strip() for part in raw.split("---") if part.strip()]
+    return parts
+
+
+def send_applied_response(job: dict) -> None:
+    """
+    After the user clicks Apply, send:
+    1. LinkedIn people-search hyperlink
+    2. Referral message parts (split by '---' from the template)
+    """
+    if not _is_configured():
+        return
+
+    company = job.get("company", "Unknown")
+    title = job.get("title", "Unknown")
+    ats_job_id = job.get("ats_job_id", "")
+
+    # 1 — LinkedIn search link
+    search_url = build_linkedin_search_url(company)
+    link_msg = f'🔍 <a href="{search_url}">Find referrers at {company} on LinkedIn</a>'
+    send_telegram_message(link_msg)
+
+    # 2 — Referral message parts
+    parts = format_referral_messages(title, company, ats_job_id)
+    for part in parts:
+        send_telegram_message(part)
