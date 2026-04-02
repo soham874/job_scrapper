@@ -161,6 +161,79 @@ def insert_application_status(company_id: int, job_id: int,
         cursor.close()
 
 
+def get_decided_jobs_with_keywords() -> list:
+    """
+    Return all jobs that have a user_decision and an analysis row.
+    Each dict has: user_decision, positive_matches, negative_matches (JSON strings).
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT j.user_decision, ja.positive_matches, ja.negative_matches "
+        "FROM job_info j "
+        "JOIN job_analysis ja ON ja.job_id = j.id "
+        "WHERE j.user_decision IS NOT NULL"
+    )
+    rows = cursor.fetchall()
+    cursor.close()
+    return [
+        {
+            "user_decision": r[0],
+            "positive_matches": r[1],
+            "negative_matches": r[2],
+        }
+        for r in rows
+    ]
+
+
+def load_keyword_weight_overrides() -> dict:
+    """
+    Return a dict of keyword -> multiplier from the keyword_weight_overrides table.
+    Returns an empty dict if the table is empty or doesn't exist yet.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT keyword, multiplier FROM keyword_weight_overrides")
+        rows = cursor.fetchall()
+        return {r[0]: r[1] for r in rows}
+    except Exception:
+        logger.debug("keyword_weight_overrides table not available yet")
+        return {}
+    finally:
+        cursor.close()
+
+
+def upsert_keyword_weight_override(keyword: str, multiplier: float,
+                                   accept_count: int, reject_count: int,
+                                   sample_count: int, lift: float) -> bool:
+    """
+    Insert or update a keyword weight override row.
+    Returns True on success, False on failure.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO keyword_weight_overrides "
+            "(keyword, multiplier, accept_count, reject_count, sample_count, lift) "
+            "VALUES (%s, %s, %s, %s, %s, %s) "
+            "ON DUPLICATE KEY UPDATE "
+            "multiplier = VALUES(multiplier), accept_count = VALUES(accept_count), "
+            "reject_count = VALUES(reject_count), sample_count = VALUES(sample_count), "
+            "lift = VALUES(lift)",
+            (keyword, multiplier, accept_count, reject_count, sample_count, lift),
+        )
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        logger.exception("Failed to upsert keyword weight override for '%s'", keyword)
+        return False
+    finally:
+        cursor.close()
+
+
 def load_companies_by_ats(ats_name: str) -> list:
     """
     Return companies from the DB that use the given ATS.

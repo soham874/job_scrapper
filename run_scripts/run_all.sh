@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+source ../venv/bin/activate
+
 # Run ALL borgs in parallel. Ctrl-C stops everything.
 set -euo pipefail
 
@@ -21,6 +23,11 @@ echo "[run_all] Migrations complete."
 echo "[run_all] Clearing test data..."
 python3 "$PROJECT_ROOT/run_scripts/clear_test_data.py"
 echo "[run_all] Test data cleared."
+
+# Run initial keyword weight recalibration from past decisions
+echo "[run_all] Running keyword weight recalibration..."
+python3 "$PROJECT_ROOT/run_scripts/run_learner.py"
+echo "[run_all] Recalibration complete."
 
 # Array of child PIDs
 CHILD_PIDS=()

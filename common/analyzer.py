@@ -8,6 +8,7 @@ from common.constants import (
     DESC_NEGATIVE_KEYWORDS,
     DESC_EXPERIENCE_PATTERNS,
 )
+from common.db.repository import load_keyword_weight_overrides
 from common.logger import get_logger
 
 logger = get_logger("common.analyzer")
@@ -55,19 +56,22 @@ def analyze_description(raw_html: str) -> dict:
             "experience_matches": [],
         }
 
+    # Load learned multipliers from DB (empty dict if table not yet populated)
+    overrides = load_keyword_weight_overrides()
+
     positive_matches = []
     positive_score = 0
     for keyword, weight in DESC_POSITIVE_KEYWORDS.items():
         if _POSITIVE_PATTERNS[keyword].search(text):
             positive_matches.append(keyword)
-            positive_score += weight
+            positive_score += weight * overrides.get(keyword, 1.0)
 
     negative_matches = []
     negative_score = 0
     for keyword, weight in DESC_NEGATIVE_KEYWORDS.items():
         if _NEGATIVE_PATTERNS[keyword].search(text):
             negative_matches.append(keyword)
-            negative_score += weight
+            negative_score += weight * overrides.get(keyword, 1.0)
 
     experience_matches = []
     experience_bonus = 0
