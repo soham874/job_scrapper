@@ -1,21 +1,3 @@
-Hi [Name],
-
----
-
 I came across a recent posting for <<TITLE>> role at <<Company>>. I’ve already applied and wanted to check if you’d be open to referring me. I’ve attached my resume for context.
 
 Job ID: <<JOB-ID>>
-
----
-
-To make it easier, here’s a short write-up you can share directly with HR or the hiring manager if you’re comfortable:
-
-~~~
-
-Soham is a backend engineer with 5+ years of experience building and scaling event-driven systems in supply chain platforms at Walmart. He has worked on high-throughput systems processing ~5M Kafka events/day and APIs serving ~1M requests/day, enabling real-time and predictive inventory visibility across 600+ retail stores.
-
-He has contributed to systems driving $120M+ in annual GMV impact and improving inventory visibility by up to 50%. His work spans Kafka-based architectures, distributed data processing, and designing reliable backend services, including implementing retry strategies, handling event ordering challenges, and optimizing system performance at scale.
-
-He was promoted within two years for his contributions to system reliability and high-impact backend platforms, and would be a strong fit for roles involving distributed systems and high-scale backend engineering.
-
-Thanks for your time, appreciate it.

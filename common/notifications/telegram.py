@@ -25,7 +25,8 @@ def is_configured() -> bool:
     return True
 
 
-def send_message(text: str, reply_markup: Optional[dict] = None) -> Optional[int]:
+def send_message(text: str, reply_markup: Optional[dict] = None,
+                  reply_to_message_id: Optional[int] = None) -> Optional[int]:
     """
     Send a single message via the Telegram Bot API.
     Returns the message_id on success, None on failure.
@@ -39,6 +40,8 @@ def send_message(text: str, reply_markup: Optional[dict] = None) -> Optional[int
     }
     if reply_markup:
         payload["reply_markup"] = reply_markup
+    if reply_to_message_id:
+        payload["reply_to_message_id"] = reply_to_message_id
     try:
         resp = requests.post(url, json=payload, timeout=15)
         if resp.ok:

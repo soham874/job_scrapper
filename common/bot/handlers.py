@@ -47,7 +47,7 @@ def handle_decision(callback_id: str, message_id: int, job_id: int, action: str)
 
     if decision == "applied":
         # Send LinkedIn search link + referral message parts
-        send_applied_response(job)
+        send_applied_response(job, reply_to_message_id=message_id)
 
         # Record in application_status
         insert_application_status(

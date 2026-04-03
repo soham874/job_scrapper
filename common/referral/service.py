@@ -5,7 +5,7 @@ after the user accepts a job.
 """
 
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from urllib.parse import quote
 
 from common.logger import get_logger
@@ -45,11 +45,10 @@ def format_referral_messages(title: str, company: str, job_id: str) -> List[str]
     return parts
 
 
-def send_applied_response(job: dict) -> None:
+def send_applied_response(job: dict, reply_to_message_id: Optional[int] = None) -> None:
     """
-    After the user clicks Apply, send:
-    1. LinkedIn people-search hyperlink
-    2. Referral message parts (split by '---' from the template)
+    After the user clicks Apply, send a single combined message (LinkedIn
+    search link + referral template) as a reply to the original job message.
     """
     if not is_configured():
         return
@@ -58,12 +57,16 @@ def send_applied_response(job: dict) -> None:
     title = job.get("title", "Unknown")
     ats_job_id = job.get("ats_job_id", "")
 
+    # Build combined message
+    sections = []
+
     # 1 — LinkedIn search link
     search_url = build_linkedin_search_url(company)
-    link_msg = f'🔍 <a href="{search_url}">Find referrers at {company} on LinkedIn</a>'
-    send_message(link_msg)
+    sections.append(f'🔍 <a href="{search_url}">Find referrers at {company} on LinkedIn</a>')
 
     # 2 — Referral message parts
     parts = format_referral_messages(title, company, ats_job_id)
-    for part in parts:
-        send_message(part)
+    sections.extend(parts)
+
+    combined = "\n\n".join(sections)
+    send_message(combined, reply_to_message_id=reply_to_message_id)
