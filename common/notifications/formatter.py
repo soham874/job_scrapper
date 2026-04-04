@@ -3,7 +3,7 @@
 Pure functions — no I/O, no DB calls, no Telegram API calls.
 """
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 def format_job_message(job: Dict[str, str], index: int = 0, total: int = 0,
@@ -30,7 +30,8 @@ def format_job_message(job: Dict[str, str], index: int = 0, total: int = 0,
     return header + "\n".join(lines)
 
 
-def format_decided_message(job: dict, decision: str) -> str:
+def format_decided_message(job: dict, decision: str,
+                           referral_search_url: Optional[str] = None) -> str:
     """Format a job message after the user has made a decision."""
     company = job.get("company", "Unknown")
     title = job.get("title", "Unknown")
@@ -50,6 +51,8 @@ def format_decided_message(job: dict, decision: str) -> str:
     ]
     if decision == "applied" and link:
         lines.append(f'🔗 <a href="{link}">Apply</a>')
+    if decision == "applied" and referral_search_url:
+        lines.append(f'🔍 <a href="{referral_search_url}">Find referrers at {company} on LinkedIn</a>')
     return "\n".join(lines)
 
 

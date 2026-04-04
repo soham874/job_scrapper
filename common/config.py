@@ -8,8 +8,6 @@ logger = get_logger("common.config")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 COMPANY_CSV = BASE_DIR / "company_info.csv"
-JOBS_DIR = BASE_DIR / "jobs"
-JOBS_DIR.mkdir(exist_ok=True)
 
 CRON_INTERVAL_SECONDS = 3600  # 1 hour
 
