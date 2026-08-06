@@ -52,13 +52,15 @@ def run_migrations():
             # Execute each statement individually (MySQL connector
             # does not support multi-statement executescript).
             # Commit after each so DDL with FK references resolves.
-            for raw_statement in sql.split(";"):
-                # Strip SQL comment lines before checking if anything remains
-                lines = [
-                    line for line in raw_statement.splitlines()
-                    if line.strip() and not line.strip().startswith("--")
-                ]
-                statement = "\n".join(lines).strip()
+            # Strip comment lines *before* splitting on ';'. A semicolon inside
+            # a comment would otherwise cut a statement in half and leave the
+            # trailing comment text prefixed to the next one.
+            body = "\n".join(
+                line for line in sql.splitlines()
+                if line.strip() and not line.strip().startswith("--")
+            )
+            for raw_statement in body.split(";"):
+                statement = raw_statement.strip()
                 if statement:
                     cursor.execute(statement)
                     conn.commit()

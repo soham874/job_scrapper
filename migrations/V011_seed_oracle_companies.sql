@@ -1,7 +1,7 @@
 -- V011: Map the six Oracle Recruiting Cloud companies to the oracle borg
 --
 -- All six rows already exist from V002 with an empty ats, so these are updates.
--- Links are normalised to the canonical CandidateExperience form; the scraper
+-- Links are normalised to the canonical CandidateExperience form. The scraper
 -- only needs the host and the site number, both of which it parses back out.
 --
 -- Note: Goldman Sachs is on CX_2. Its CX_1 site returns zero requisitions.
