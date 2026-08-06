@@ -69,6 +69,10 @@ echo "[run_all] Starting Greenhouse borg (port 5002)..."
 python3 -m uvicorn borgs.greenhouse.api:app --host 0.0.0.0 --port 5002 &
 CHILD_PIDS+=($!)
 
+echo "[run_all] Starting Oracle borg (port 5003)..."
+python3 -m uvicorn borgs.oracle.api:app --host 0.0.0.0 --port 5003 &
+CHILD_PIDS+=($!)
+
 echo "[run_all] All services running. PIDs: ${CHILD_PIDS[*]}"
 echo "[run_all] Press Ctrl-C to stop all."
 
