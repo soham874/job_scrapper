@@ -67,6 +67,61 @@ Each borg exposes:
 
 Each borg runs an automatic scrape every **1 hour** in a background thread. Companies are scraped **in parallel** (8 workers) for speed. Results are saved to `jobs/<borg>_<UTC timestamp>.csv`.
 
+## Tracked Companies (Google Sheet)
+
+Which companies get scraped is driven by a Google Sheet, not by migrations. Edit the
+sheet and the change is picked up on the next borg run — no SQL, no restart.
+
+### Columns
+
+Only these columns are read; any other column in the sheet is ignored, so you can keep
+notes, POCs and whatever else alongside them. Heading matching ignores case, spacing and
+punctuation (`ATS Link`, `ats_link` and `Ats-Link` are all the same column).
+
+| Column               | Required | Purpose                                              |
+|----------------------|----------|------------------------------------------------------|
+| `Company Name`       | yes      | Unique key. Renaming a company creates a new row.     |
+| `ATS`                | yes      | `workday`, `greenhouse` or `oracle` — picks the borg. |
+| `ATS Link`           | yes      | Career-site URL the scraper hits.                     |
+| `Enable in tracker`  | yes      | `Yes` to track, `No` to stop. Blank counts as `No`.   |
+| `Base Country`       | no       | Stored on the company row.                            |
+| `Target Location`    | no       | Stored on the company row.                            |
+
+Switching a company to `No` — or deleting its row — only stops future scraping. The
+company, its past jobs and its application history stay in the database, and flipping it
+back to `Yes` resumes tracking against the same row.
+
+### Setup
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), create a project,
+   enable the **Google Sheets API**, and create a **service account**. Download its JSON
+   key to the repo root as `service_account.json` (gitignored).
+2. Open the JSON, copy the `client_email` value, and **share the sheet with that address
+   as a Viewer**. Without this step the API returns a 404.
+3. Set the vars in `.env`:
+   ```
+   COMPANY_SHEET_ID=<the long id in the sheet URL: /spreadsheets/d/<THIS>/edit>
+   COMPANY_SHEET_TAB=Companies
+   GOOGLE_SERVICE_ACCOUNT_FILE=service_account.json
+   ```
+4. Verify the wiring:
+   ```bash
+   PYTHONPATH=. python3 run_scripts/sync_companies.py
+   ```
+   It prints how many rows were inserted, updated and disabled, and exits non-zero with
+   the reason if the sheet cannot be read.
+
+### When it syncs
+
+Every borg syncs at the top of each run, before scraping. The three borgs share a MySQL
+named lock and a 5-minute freshness window, so only the first one through actually calls
+the Sheets API. `run_all.sh` also syncs once at startup so credential problems surface
+immediately rather than an hour later in a log file.
+
+If the sheet is unreachable the sync logs an error and scraping continues with the
+companies already in the database — an outage at Google never stops a run. A sync that
+would produce zero companies is refused outright.
+
 ## Telegram Notifications (Optional)
 
 Get push notifications for new jobs via a Telegram bot. After each cron run, if new jobs were found, a batch summary is sent to your Telegram chat.

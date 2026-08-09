@@ -2,6 +2,7 @@ import json
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from common.companies.sync import sync_companies_if_stale
 from common.config import CRON_INTERVAL_SECONDS
 from common.analyzer import analyze_description
 from common.constants import DESC_SCORE_THRESHOLD
@@ -74,6 +75,7 @@ def _scrape_and_save(company: dict) -> list:
 def run_once():
     """Single execution: scrape all qualifying companies in parallel and save results."""
     logger.info("=== Greenhouse borg run started ===")
+    sync_companies_if_stale()
     companies = load_companies_by_ats("greenhouse")
     all_new_jobs = []
 

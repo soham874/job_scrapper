@@ -3,6 +3,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from common.analyzer import analyze_description
+from common.companies.sync import sync_companies_if_stale
 from common.config import CRON_INTERVAL_SECONDS
 from common.constants import SEARCH_TEXT, DESC_SCORE_THRESHOLD
 from common.db.repository import load_companies_by_ats, insert_job, insert_job_analysis
@@ -75,6 +76,7 @@ def _scrape_and_save(company: dict) -> list:
 def run_once():
     """Single execution: scrape all qualifying companies in parallel and save results."""
     logger.info("=== Oracle borg run started ===")
+    sync_companies_if_stale()
     companies = load_companies_by_ats("oracle")
     all_new_jobs = []
 
