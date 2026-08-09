@@ -1,5 +1,10 @@
 -- V011: Map the six Oracle Recruiting Cloud companies to the oracle borg
 --
+-- HISTORICAL — like V002, superseded by the Google Sheet sync
+-- (common/companies/sync.py). Kept because it is already recorded in
+-- schema_version on live databases. Change a company's ATS in the sheet,
+-- not here.
+--
 -- All six rows already exist from V002 with an empty ats, so these are updates.
 -- Links are normalised to the canonical CandidateExperience form. The scraper
 -- only needs the host and the site number, both of which it parses back out.

@@ -7,7 +7,8 @@ A Python monorepo that scrapes job postings from **Workday** and **Greenhouse** 
 ```
 job-scrapper/
 ├── common/              # Shared utilities (config, logging)
-│   ├── config.py        # CSV reader, paths, constants
+│   ├── companies/       # Google Sheet fetch + company_info sync
+│   ├── config.py        # Shared constants (cron interval)
 │   └── logger.py        # Per-borg file + console logging
 ├── borgs/
 │   ├── workday/          # Workday borg
@@ -24,9 +25,11 @@ job-scrapper/
 │   └── run_all.sh
 ├── jobs/                 # Output CSVs (auto-created)
 ├── logs/                 # Log files (auto-created)
-├── company_info.csv      # Input: company names + career page URLs
 └── requirements.txt
 ```
+
+The tracked-company list is not a file in the repo — it lives in the Google Sheet
+described under [Tracked Companies](#tracked-companies-google-sheet).
 
 ## Setup
 
@@ -143,4 +146,5 @@ If these vars are not set, the notifier is silently skipped and the scraper runs
 Per-borg log files are written to the `logs/` directory:
 - `logs/workday.log`
 - `logs/greenhouse.log`
-- `logs/common.config.log`
+- `logs/oracle.log`
+- `logs/companies.sync.log`
