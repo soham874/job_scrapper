@@ -19,6 +19,13 @@ echo "[run_all] Running database migrations..."
 python3 "$PROJECT_ROOT/run_scripts/run_migrations.py"
 echo "[run_all] Migrations complete."
 
+# Pull the company sheet so the borgs start from the current tracking list.
+# Each borg also re-syncs at the top of every run; this one just surfaces
+# sheet/credential problems up front instead of an hour later in a log file.
+echo "[run_all] Syncing companies from Google Sheet..."
+python3 "$PROJECT_ROOT/run_scripts/sync_companies.py" || \
+    echo "[run_all] WARNING: company sync failed — continuing with the companies already in the DB."
+
 # Clear any leftover test data from previous runs
 echo "[run_all] Clearing test data..."
 python3 "$PROJECT_ROOT/run_scripts/clear_test_data.py"

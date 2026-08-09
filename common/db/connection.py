@@ -1,6 +1,7 @@
 """MySQL connection management — singleton connection and schema bootstrapping."""
 
 import os
+from contextlib import contextmanager
 from pathlib import Path
 
 import mysql.connector
@@ -42,6 +43,33 @@ def get_connection():
             MYSQL_USER, MYSQL_HOST, MYSQL_PORT, MYSQL_DATABASE,
         )
     return _connection
+
+
+@contextmanager
+def advisory_lock(name: str, timeout_seconds: int = 5):
+    """
+    Serialise a section across processes using a MySQL named lock.
+
+    Yields True if the lock was acquired, False if another process holds it.
+    Each borg runs in its own process, so this stops three concurrent sheet
+    syncs from writing the same rows at once.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    acquired = False
+    try:
+        cursor.execute("SELECT GET_LOCK(%s, %s)", (name, timeout_seconds))
+        row = cursor.fetchone()
+        acquired = bool(row and row[0] == 1)
+        yield acquired
+    finally:
+        if acquired:
+            try:
+                cursor.execute("SELECT RELEASE_LOCK(%s)", (name,))
+                cursor.fetchall()
+            except Exception:
+                logger.exception("Failed to release advisory lock '%s'", name)
+        cursor.close()
 
 
 def ensure_schema():

@@ -236,15 +236,116 @@ def upsert_keyword_weight_override(keyword: str, multiplier: float,
 
 def load_companies_by_ats(ats_name: str) -> list:
     """
-    Return companies from the DB that use the given ATS.
+    Return companies from the DB that use the given ATS and are enabled for
+    tracking. `enabled` mirrors the "Enable in tracker" column of the sheet.
     Each dict has keys: id, name, url.
     """
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT id, company_name, ats_link FROM company_info WHERE ats = %s AND ats_link != ''",
+        "SELECT id, company_name, ats_link FROM company_info "
+        "WHERE ats = %s AND ats_link != '' AND enabled = 1",
         (ats_name,),
     )
     rows = cursor.fetchall()
     cursor.close()
     return [{"id": r[0], "name": r[1], "url": r[2]} for r in rows]
+
+
+def upsert_company(company_name: str, base_country: str, target_location: str,
+                   ats: str, ats_link: str, enabled: bool) -> str:
+    """
+    Insert or update a company by name, stamping synced_at.
+
+    Returns 'inserted', 'updated' or 'unchanged'. Raises on failure so the
+    caller can abort the sync rather than half-applying the sheet.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO company_info "
+            "(company_name, base_country, target_location, ats, ats_link, enabled, synced_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, NOW()) "
+            "ON DUPLICATE KEY UPDATE "
+            "base_country = VALUES(base_country), "
+            "target_location = VALUES(target_location), "
+            "ats = VALUES(ats), "
+            "ats_link = VALUES(ats_link), "
+            "enabled = VALUES(enabled), "
+            "synced_at = NOW()",
+            (company_name, base_country, target_location, ats, ats_link, int(enabled)),
+        )
+        conn.commit()
+        # MySQL reports 1 for a fresh insert, 2 when an existing row changed,
+        # and 0 when the row already matched.
+        if cursor.rowcount == 1:
+            return "inserted"
+        return "updated" if cursor.rowcount == 2 else "unchanged"
+    except Exception:
+        conn.rollback()
+        logger.exception("Failed to upsert company '%s'", company_name)
+        raise
+    finally:
+        cursor.close()
+
+
+def disable_companies_absent_from(company_names: list) -> list:
+    """
+    Disable every currently-enabled company whose name is not in the given list.
+
+    Used to honour deletions from the sheet. Job history is left untouched.
+    Returns the names that were disabled.
+    """
+    if not company_names:
+        raise ValueError("Refusing to disable all companies from an empty name list")
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        placeholders = ", ".join(["%s"] * len(company_names))
+        cursor.execute(
+            f"SELECT company_name FROM company_info "
+            f"WHERE enabled = 1 AND company_name NOT IN ({placeholders})",
+            tuple(company_names),
+        )
+        stale = [r[0] for r in cursor.fetchall()]
+        if stale:
+            cursor.execute(
+                f"UPDATE company_info SET enabled = 0 "
+                f"WHERE enabled = 1 AND company_name NOT IN ({placeholders})",
+                tuple(company_names),
+            )
+            conn.commit()
+        return stale
+    except Exception:
+        conn.rollback()
+        logger.exception("Failed to disable companies absent from the sheet")
+        raise
+    finally:
+        cursor.close()
+
+
+def seconds_since_last_sync() -> Optional[int]:
+    """
+    Seconds since any company row was last reconciled against the sheet,
+    or None if no sync has ever run.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT TIMESTAMPDIFF(SECOND, MAX(synced_at), NOW()) FROM company_info"
+    )
+    row = cursor.fetchone()
+    cursor.close()
+    return row[0] if row and row[0] is not None else None
+
+
+def count_companies() -> int:
+    """Total rows in company_info, used as a sanity check before syncing."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM company_info")
+    row = cursor.fetchone()
+    cursor.close()
+    return row[0] if row else 0
