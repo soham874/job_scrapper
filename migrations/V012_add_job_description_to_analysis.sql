@@ -5,4 +5,4 @@
 -- instead — job_analysis is already the "derived data about a job" table, and
 -- rows here are only created for jobs that cleared DESC_SCORE_THRESHOLD.
 
-ALTER TABLE job_analysis ADD COLUMN IF NOT EXISTS job_description MEDIUMTEXT;
+ALTER TABLE job_analysis ADD COLUMN job_description VARCHAR(10000) DEFAULT NULL;
