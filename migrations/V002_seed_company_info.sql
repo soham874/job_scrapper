@@ -1,5 +1,13 @@
 -- V002: Seed company_info from company_info.csv
 -- ATS and ATS link derived from which career page URL is present
+--
+-- HISTORICAL — superseded by the Google Sheet sync (common/companies/sync.py),
+-- which is now the source of truth for which companies are tracked. This file
+-- is kept only because it is already recorded in schema_version on live
+-- databases; it is not the place to add or change companies. Edit the sheet.
+--
+-- The company_info.csv this was generated from has been deleted (nothing read
+-- it any more). To see it: git show 6018964:company_info.csv
 
 INSERT IGNORE INTO company_info (company_name, base_country, target_location, ats, ats_link) VALUES ('Adidas', '', '', '', '');
 INSERT IGNORE INTO company_info (company_name, base_country, target_location, ats, ats_link) VALUES ('Adobe', '', '', 'workday', 'https://adobe.wd5.myworkdayjobs.com/external_experienced');
