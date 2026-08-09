@@ -53,18 +53,22 @@ def insert_job(company_id: int, ats_job_id: str, title: str,
 
 def insert_job_analysis(job_id: int, relevance_score: int,
                         positive_matches: str, negative_matches: str,
-                        experience_matches: str) -> bool:
+                        experience_matches: str,
+                        job_description: Optional[str] = None) -> bool:
     """
     Insert an analysis row for a job. The match columns expect JSON-encoded strings.
-    Returns True on success, False on failure.
+    job_description holds the plain-text description, used later by the resume
+    tailoring module. Returns True on success, False on failure.
     """
     conn = get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
             "INSERT INTO job_analysis (job_id, relevance_score, positive_matches, "
-            "negative_matches, experience_matches) VALUES (%s, %s, %s, %s, %s)",
-            (job_id, relevance_score, positive_matches, negative_matches, experience_matches),
+            "negative_matches, experience_matches, job_description) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (job_id, relevance_score, positive_matches, negative_matches,
+             experience_matches, job_description),
         )
         conn.commit()
         return True
@@ -130,6 +134,39 @@ def get_job_by_id(job_id: int) -> Optional[dict]:
         "company": row[5],
         "ats_job_id": row[6],
         "company_id": row[7],
+    }
+
+
+def get_job_analysis(job_id: int) -> Optional[dict]:
+    """
+    Return the analysis row for a job.
+    Keys: relevance_score, positive_matches, negative_matches, experience_matches,
+    job_description. The match values are JSON-encoded strings as stored.
+    job_description is None for jobs scraped before migration V012.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT relevance_score, positive_matches, negative_matches, "
+            "experience_matches, job_description FROM job_analysis WHERE job_id = %s",
+            (job_id,),
+        )
+        row = cursor.fetchone()
+    except Exception:
+        logger.exception("Failed to load analysis for job_id %d", job_id)
+        return None
+    finally:
+        cursor.close()
+
+    if not row:
+        return None
+    return {
+        "relevance_score": row[0],
+        "positive_matches": row[1],
+        "negative_matches": row[2],
+        "experience_matches": row[3],
+        "job_description": row[4],
     }
 
 

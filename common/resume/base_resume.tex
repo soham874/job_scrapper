@@ -1,0 +1,240 @@
+%-------------------------
+% Resume in Latex
+% Author : Jake Gutierrez
+% Based off of: https://github.com/sb2nov/resume
+% License : MIT
+%------------------------
+
+\documentclass[letterpaper,11pt]{article}
+
+\usepackage[none]{hyphenat}
+\usepackage{latexsym}
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{marvosym}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{verbatim}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\usepackage[english]{babel}
+\usepackage{tabularx}
+\usepackage{fontawesome5}
+\usepackage{multicol}
+\usepackage{ragged2e}
+\setlength{\multicolsep}{-3.0pt}
+\setlength{\columnsep}{-1pt}
+% pdfTeX-only. Guarded so the file also compiles under XeTeX engines (tectonic,
+% xelatex), which skip this block — see the \pdfgentounicode note below.
+\ifdefined\pdfgentounicode
+  \input{glyphtounicode}
+\fi
+
+
+%----------FONT OPTIONS----------
+% sans-serif
+% \usepackage[sfdefault]{FiraSans}
+% \usepackage[sfdefault]{roboto}
+% \usepackage[sfdefault]{noto-sans}
+% \usepackage[default]{sourcesanspro}
+
+% serif
+% \usepackage{CormorantGaramond}
+% \usepackage{charter}
+
+
+\pagestyle{fancy}
+\fancyhf{} % clear all header and footer fields
+\fancyfoot{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% Adjust margins
+\addtolength{\oddsidemargin}{-0.6in}
+\addtolength{\evensidemargin}{-0.5in}
+\addtolength{\textwidth}{1.19in}
+\addtolength{\topmargin}{-.7in}
+\addtolength{\textheight}{1.4in}
+
+\urlstyle{same}
+
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0in}
+
+% Sections formatting
+\titleformat{\section}{
+  \vspace{-4pt}\scshape\raggedright\large\bfseries
+}{}{0em}{}[\color{black}\titlerule \vspace{-5pt}]
+
+% Ensure the generated PDF is machine readable / ATS parsable.
+% Only pdfTeX needs this: it maps Type1 glyphs back to Unicode so text extracts
+% correctly. XeTeX-based engines already emit extractable text, so skipping this
+% under tectonic/xelatex is not a loss.
+\ifdefined\pdfgentounicode
+  \pdfgentounicode=1
+\fi
+
+%-------------------------
+% Custom commands
+\newcommand{\resumeItem}[1]{
+  \item\small{
+    {#1 \vspace{-2pt}}
+  }
+}
+
+\newcommand{\classesList}[4]{
+    \item\small{
+        {#1 #2 #3 #4 \vspace{-2pt}}
+  }
+}
+
+\newcommand{\resumeSubheading}[4]{
+  \vspace{-2pt}\item
+    \begin{tabular*}{1.0\textwidth}[t]{l@{\extracolsep{\fill}}r}
+      \textbf{#1} & \textbf{\small #2} \\
+      \textit{\small#3} & \textit{\small #4} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubSubheading}[2]{
+    \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \textit{\small#1} & \textit{\small #2} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeProjectHeading}[2]{
+    \item
+    \begin{tabular*}{1.001\textwidth}{l@{\extracolsep{\fill}}r}
+      \small#1 & \textbf{\small #2}\\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubItem}[1]{\resumeItem{#1}\vspace{-4pt}}
+
+\renewcommand\labelitemi{$\vcenter{\hbox{\tiny$\bullet$}}$}
+\renewcommand\labelitemii{$\vcenter{\hbox{\tiny$\bullet$}}$}
+
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.0in, label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+
+%-------------------------------------------
+%%%%%%  RESUME STARTS HERE  %%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\begin{document}
+
+%----------HEADING----------
+% \begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
+%   \textbf{\href{http://sourabhbajaj.com/}{\Large Sourabh Bajaj}} & Email : \href{mailto:sourabh@sourabhbajaj.com}{sourabh@sourabhbajaj.com}\\
+%   \href{http://sourabhbajaj.com/}{http://www.sourabhbajaj.com} & Mobile : +1-123-456-7890 \\
+% \end{tabular*}
+
+% RESUME_REDACT_START
+\begin{center}
+    {\Huge \scshape xx} \\ \vspace{1pt}
+    \small \raisebox{-0.1\height}\faPhone\ (+91)-xx ~ \href{mailto:xx}{\raisebox{-0.2\height}\faEnvelope\  \underline{xx}} ~ 
+    \href{xx}{\raisebox{-0.2\height}\faLinkedin\ \underline{xx}}  ~
+    \href{xx}{\raisebox{-0.2\height}\faGithub\ \underline{xx}}
+    \vspace{-8pt}
+\end{center}
+% RESUME_REDACT_END
+
+%-----------SUMMARY-----------
+
+\section{Summary}
+\begin{itemize}[leftmargin=0.15in, label={}]
+\small{\item{
+\justifying
+Backend engineer with 5+ years of experience building and scaling event-driven systems in supply chain platforms. Specialized in Kafka-based architectures, high-throughput APIs, and distributed system reliability, with systems processing $\sim$5M events/day and serving $\sim$1M requests/day. Proven track record of improving inventory visibility and driving business impact, including contributions to systems generating \$120M+ in annual GMV uplift. Strong focus on system design, production stability, and solving complex data and consistency challenges in real-world environments.
+}}
+\end{itemize}
+\vspace{-16pt}
+
+
+%-----------PROGRAMMING SKILLS-----------
+\section{Technical Skills}
+\begin{itemize}[leftmargin=0.15in, label={}]
+\small{\item{
+\textbf{Languages}{: Java, Python, SQL} \\
+\textbf{Frameworks}{: Spring Boot, Flask} \\
+\textbf{Distributed Systems}{: Apache Kafka, Redis, Event-driven architecture, REST APIs, GraphQL} \\
+\textbf{Databases}{: MySQL, GCP BigQuery, Azure Cosmos DB} \\
+\textbf{Infrastructure \& DevOps}{: Kubernetes, Docker, Jenkins, GitHub} \\
+\textbf{Monitoring \& Observability}{: Prometheus, Grafana, Splunk} \\
+}}
+\end{itemize}
+\vspace{-16pt}
+
+
+%-----------EXPERIENCE-----------
+\section{Experience}
+\resumeSubHeadingListStart
+
+\resumeSubheading
+{Walmart Global Tech India}{July 2022 -- Present}
+{}{Bengaluru, Karnataka, India}
+
+\resumeItemListStart
+
+\resumeItem{\textbf{Software Engineer - III} \hfill May 2024 -- Present}
+\resumeItem{Designed event-driven backend systems processing $\sim$5M Kafka events/day for real-time and predictive inventory visibility, making key trade-offs between latency, throughput, and consistency across services}
+\resumeItem{Architected and scaled APIs serving $\sim$1M requests/day across 600+ stores, optimizing data access patterns and caching strategies to meet strict latency requirements}
+\resumeItem{Contributed to ETA prediction platform ($\sim$80\% accuracy) by building data pipelines and handling edge cases in real-world logistics data such as delays, partial shipments, and missing signals}
+\resumeItem{Led reliability initiatives including monitoring, alerting, and failure recovery design, reducing major incidents by 50\% and MTTR by 60\%}
+\resumeItem{Designed and implemented Kafka retry, backoff, and dead-letter strategies, balancing data correctness with system stability under high-throughput conditions}
+
+\vspace{6pt}
+
+\resumeItem{\textbf{Software Engineer - II} \hfill July 2022 -- April 2024}
+\resumeItem{Built streaming-based integrations with third-party logistics systems, handling data inconsistencies and improving road network visibility by 35\%}
+\resumeItem{Designed services for fleet-based inventory tracking, addressing challenges in event ordering, duplication, and partial data, leading to 50\% improvement in visibility}
+\resumeItem{Developed event-driven systems for future inventory projections, contributing to business initiatives driving \$120M annual GMV uplift}
+\resumeItem{Implemented Kafka consumer reliability mechanisms including retry handling, lag monitoring, and authentication for $\sim$5M events/day pipelines}
+\resumeItem{Debugged production issues involving Kubernetes resource constraints, database bottlenecks, and message backlogs during on-call rotations}
+
+\resumeItemListEnd
+
+\resumeSubheading
+{HCL Technologies Ltd.}{Feb 2021 -- July 2022}
+{Software Engineer}{Nagpur, Maharashtra, India}
+\resumeItemListStart
+\resumeItem{Developed automation tools using PowerShell, Bash, and C\# to streamline deployment workflows across enterprise environments}
+\resumeItem{Managed large-scale software deployments using SCCM, ensuring reliability across distributed systems}
+\resumeItem{Monitored system health and resolved production issues across client infrastructure}
+\resumeItemListEnd
+
+\resumeSubHeadingListEnd
+\vspace{-16pt}
+
+
+%-----------EDUCATION-----------
+\section{Education}
+  \resumeSubHeadingListStart
+    \resumeSubheading
+      {Kalyani Government Engineering College}{Aug. 2016 -- July 2020}
+      {B.Tech - Mechanical Engineering}{Kalyani, West Bengal}
+  \resumeSubHeadingListEnd
+
+%-----------INVOLVEMENT---------------
+\section{Awards}
+\begin{itemize}[leftmargin=0.15in, label={}]
+\small{\item{
+
+\textbf{Excellence Award} \hfill Walmart Global Tech India \\
+Recognized for high-impact contributions to supply chain platforms, including improvements in system reliability and inventory visibility
+
+\vspace{4pt}
+
+\textbf{Value Creation Award} \hfill HCL Technologies \\
+Awarded for delivering automation solutions that improved operational efficiency and deployment workflows
+
+}}
+\end{itemize}
+\vspace{-16pt}
+
+
+\end{document}

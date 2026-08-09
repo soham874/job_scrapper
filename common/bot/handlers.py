@@ -3,13 +3,20 @@
 Keeps the FastAPI routing layer (bot/app.py) thin and focused on HTTP wiring.
 """
 
+import json
 from datetime import date
 
 from common.logger import get_logger
-from common.db.repository import get_job_by_id, insert_application_status, update_job_decision
+from common.db.repository import (
+    get_job_analysis,
+    get_job_by_id,
+    insert_application_status,
+    update_job_decision,
+)
 from common.notifications.formatter import format_decided_message
 from common.notifications.telegram import answer_callback_query, edit_message
 from common.referral.service import build_linkedin_search_url, send_applied_response
+from common.resume.dispatch import dispatch_async
 
 logger = get_logger("bot.handlers")
 
@@ -56,6 +63,26 @@ def handle_decision(callback_id: str, message_id: int, job_id: int, action: str)
             job_id=job_id,
             applied_on=date.today().isoformat(),
             status="applied",
+        )
+
+        # Read the stored analysis here, on the request thread, so resume
+        # generation needs no DB access of its own.
+        analysis = get_job_analysis(job_id) or {}
+
+        # Jobs scraped before migration V012 have no stored description, and some
+        # ATS feeds never provide one. The analyzer's matched keywords are always
+        # present though, and stand in as the tailoring signal.
+        try:
+            keywords = json.loads(analysis.get("positive_matches") or "[]")
+        except (TypeError, ValueError):
+            logger.warning("Could not parse positive_matches for job %d", job_id)
+            keywords = []
+
+        dispatch_async(
+            job,
+            description=analysis.get("job_description") or "",
+            reply_to_message_id=message_id,
+            keywords=keywords,
         )
 
     logger.info("Job %d marked as %s", job_id, decision)

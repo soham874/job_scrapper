@@ -55,6 +55,7 @@ def _scrape_and_save(company: dict) -> list:
                     positive_matches=json.dumps(analysis["positive_matches"]),
                     negative_matches=json.dumps(analysis["negative_matches"]),
                     experience_matches=json.dumps(analysis["experience_matches"]),
+                    job_description=r.get("description", ""),
                 )
                 new_jobs.append({
                     "job_id": job_row_id,

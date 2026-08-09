@@ -55,6 +55,38 @@ def send_message(text: str, reply_markup: Optional[dict] = None,
         return None
 
 
+def send_document(file_path: str, caption: str = "",
+                  reply_to_message_id: Optional[int] = None) -> Optional[int]:
+    """
+    Upload a file via sendDocument (multipart).
+    Returns the message_id on success, None on failure.
+    """
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
+    data = {"chat_id": TELEGRAM_CHAT_ID, "parse_mode": "HTML"}
+    if caption:
+        # Telegram rejects captions over 1024 characters.
+        data["caption"] = caption[:1024]
+    if reply_to_message_id:
+        data["reply_to_message_id"] = reply_to_message_id
+
+    try:
+        with open(file_path, "rb") as fh:
+            resp = requests.post(url, data=data, files={"document": fh}, timeout=60)
+    except FileNotFoundError:
+        logger.error("Cannot send document — file not found: %s", file_path)
+        return None
+    except Exception:
+        logger.exception("Failed to send Telegram document %s", file_path)
+        return None
+
+    if resp.ok:
+        message_id = resp.json().get("result", {}).get("message_id")
+        logger.info("Telegram document sent (id=%s, file=%s)", message_id, file_path)
+        return message_id
+    logger.error("Telegram sendDocument error %d: %s", resp.status_code, resp.text)
+    return None
+
+
 def edit_message(message_id: int, text: str) -> bool:
     """
     Edit an existing Telegram message (remove buttons, update text).
