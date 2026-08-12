@@ -40,9 +40,6 @@ def _path(name: str, default: Path) -> Path:
 
 RESUME_ENABLED = _flag("RESUME_ENABLED")
 RESUME_GEMINI_ENABLED = _flag("RESUME_GEMINI_ENABLED")
-# Strip every region marked with RESUME_REDACT_START/END in the .tex file before
-# sending the resume to Gemini, and splice the originals back afterwards.
-RESUME_REDACT_PERSONAL = _flag("RESUME_REDACT_PERSONAL", default="true")
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 # Flash-class models are the ones on the AI Studio free tier.

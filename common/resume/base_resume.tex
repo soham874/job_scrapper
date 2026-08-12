@@ -133,7 +133,8 @@
 %   \href{http://sourabhbajaj.com/}{http://www.sourabhbajaj.com} & Mobile : +1-123-456-7890 \\
 % \end{tabular*}
 
-% RESUME_REDACT_START
+% Personal details. Never sent to the model — build_context() starts the payload
+% at the first \section, which is below this block.
 \begin{center}
     {\Huge \scshape xx} \\ \vspace{1pt}
     \small \raisebox{-0.1\height}\faPhone\ (+91)-xx ~ \href{mailto:xx}{\raisebox{-0.2\height}\faEnvelope\  \underline{xx}} ~ 
@@ -141,17 +142,18 @@
     \href{xx}{\raisebox{-0.2\height}\faGithub\ \underline{xx}}
     \vspace{-8pt}
 \end{center}
-% RESUME_REDACT_END
 
 %-----------SUMMARY-----------
 
 \section{Summary}
+% RESUME_DYNAMIC_START(summary)
 \begin{itemize}[leftmargin=0.15in, label={}]
 \small{\item{
 \justifying
 Backend engineer with 5+ years of experience building and scaling event-driven systems in supply chain platforms. Specialized in Kafka-based architectures, high-throughput APIs, and distributed system reliability, with systems processing $\sim$5M events/day and serving $\sim$1M requests/day. Proven track record of improving inventory visibility and driving business impact, including contributions to systems generating \$120M+ in annual GMV uplift. Strong focus on system design, production stability, and solving complex data and consistency challenges in real-world environments.
 }}
 \end{itemize}
+% RESUME_DYNAMIC_END
 \vspace{-16pt}
 
 
@@ -172,6 +174,7 @@ Backend engineer with 5+ years of experience building and scaling event-driven s
 
 %-----------EXPERIENCE-----------
 \section{Experience}
+% RESUME_DYNAMIC_START(experience)
 \resumeSubHeadingListStart
 
 \resumeSubheading
@@ -208,6 +211,7 @@ Backend engineer with 5+ years of experience building and scaling event-driven s
 \resumeItemListEnd
 
 \resumeSubHeadingListEnd
+% RESUME_DYNAMIC_END
 \vspace{-16pt}
 
 

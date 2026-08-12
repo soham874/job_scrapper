@@ -46,7 +46,10 @@ def handle_decision(callback_id: str, message_id: int, job_id: int, action: str)
         return {"ok": True}
 
     # Edit the Telegram message to show the decision and remove buttons
-    referral_url = build_linkedin_search_url(job.get("company", "")) if decision == "applied" else None
+    referral_url = (
+        build_linkedin_search_url(job.get("company", ""), job.get("linkedin_company_ids"))
+        if decision == "applied" else None
+    )
     new_text = format_decided_message(job, decision, referral_search_url=referral_url)
     edit_message(message_id, new_text)
 

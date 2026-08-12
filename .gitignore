@@ -16,3 +16,4 @@ credentials.json
 *.pyc
 # Generated resume PDFs — one per accepted job, no reason to track them
 /generated_resumes
+/prod_table_dump

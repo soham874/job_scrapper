@@ -15,14 +15,38 @@ logger = get_logger("referral.service")
 
 _TEMPLATE_PATH = Path(__file__).resolve().parent / "linkedin_message_template.txt"
 
+# LinkedIn's internal id for the user's own organization. Used as pastCompany
+# so referral searches surface alumni of that org now working elsewhere.
+_OWN_ORG_LINKEDIN_ID = "9390173"
 
-def build_linkedin_search_url(company_name: str) -> str:
-    """Return a LinkedIn people-search URL for software engineers at the given company in Bangalore."""
-    encoded = quote(f"software engineer {company_name} bangalore")
-    return (
+
+def _encode_id_list(ids: List[str]) -> str:
+    """Encode ids as LinkedIn's %5B%22id1%22%2C%22id2%22%5D array-facet format."""
+    quoted = "%22%2C%22".join(quote(i) for i in ids)
+    return f"%5B%22{quoted}%22%5D"
+
+
+def build_linkedin_search_url(company_name: str, company_linkedin_ids: Optional[str] = None) -> str:
+    """
+    Return a LinkedIn people-search URL for software engineers at the given
+    company in Bangalore who previously worked at the user's own organization.
+
+    company_linkedin_ids (from company_info.linkedin_company_ids) is an
+    optional comma-separated string — a company can exist as multiple
+    distinct entities on LinkedIn (e.g. "Walmart Global Tech" vs "Walmart
+    Global Tech India"), so all ids are OR'd together via currentCompany. If
+    it's None/empty, the search falls back to the keyword-only form.
+    """
+    encoded = quote(f"software engineer {company_name}")
+    url = (
         f"https://www.linkedin.com/search/results/people/"
-        f"?keywords={encoded}&origin=FACETED_SEARCH&pastCompany=%5B%229390173%22%5D"
+        f"?keywords={encoded}&origin=FACETED_SEARCH"
+        f"&pastCompany={_encode_id_list([_OWN_ORG_LINKEDIN_ID])}"
     )
+    ids = [i.strip() for i in (company_linkedin_ids or "").split(",") if i.strip()]
+    if ids:
+        url += f"&currentCompany={_encode_id_list(ids)}"
+    return url
 
 
 def format_referral_messages(title: str, company: str, job_id: str) -> List[str]:
