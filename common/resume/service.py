@@ -32,28 +32,28 @@ _BLOCK_TAGS = re.compile(
     r"(?i)</?(p|div|br|li|ul|ol|h[1-6]|tr|table|section|article|header|footer)\b[^>]*>"
 )
 
-_REDACT_START = "% RESUME_REDACT_START"
-_REDACT_END = "% RESUME_REDACT_END"
+_DYNAMIC_START = "% RESUME_DYNAMIC_START"
+_DYNAMIC_END = "% RESUME_DYNAMIC_END"
 
-# Any number of marked regions, anywhere in the file — a resume typically has
-# personal data in more than one place (contact header, PDF metadata in the
-# preamble, a personal site URL in a project bullet).
-_REDACT_BLOCK = re.compile(
-    re.escape(_REDACT_START) + r".*?" + re.escape(_REDACT_END),
+# One tailorable region. The name in parentheses is what maps a returned
+# fragment back to the place it came from, so the model may return regions in
+# any order — or omit one — without anything landing in the wrong section.
+_DYNAMIC_BLOCK = re.compile(
+    re.escape(_DYNAMIC_START) + r"\((?P<name>[A-Za-z0-9_]+)\)\n"
+    r"(?P<body>.*?)\n"
+    + re.escape(_DYNAMIC_END),
     re.DOTALL,
 )
 
+# Scaffolding that must never appear inside a fragment. Seeing any of it means
+# the model ignored the contract and returned a whole document, in which case
+# splicing it into a region would nest a document inside itself.
+_SCAFFOLDING = ("\\documentclass", "\\usepackage",
+                "\\begin{document}", "\\end{document}")
 
-def _placeholder(index: int) -> str:
-    """Stand-in sent to the model in place of one redacted region."""
-    return (
-        f"{_REDACT_START}\n"
-        f"% [Personal details withheld. Reproduce these lines exactly as-is,\n"
-        f"%  including both comment markers. Do not invent a name, contact\n"
-        f"%  details, or links to replace them.]\n"
-        f"REDACTED_PERSONAL_BLOCK_{index}\n"
-        f"{_REDACT_END}"
-    )
+# Escaped braces are literal characters, not grouping, so they must not count
+# towards the balance check.
+_ESCAPED_BRACE = re.compile(r"\\[{}]")
 
 # Job descriptions can be enormous. Trim to keep free-tier requests small; the
 # useful signal (responsibilities, requirements) is near the top.
@@ -111,43 +111,86 @@ def load_base_resume() -> Optional[str]:
     return _read(config.BASE_RESUME_FILE, "Base resume")
 
 
-def redact_personal(tex: str) -> tuple:
+def split_dynamic(tex: str) -> dict:
     """
-    Replace every marked region with a numbered placeholder.
+    Return {region name: body} for every marked region, in document order.
 
-    Returns (regions, redacted_tex) where regions holds the original text of each
-    region in document order. An empty regions list means no markers were found
-    and the resume would be sent whole.
+    Used on both sides of the call: on the base resume to learn what may be
+    tailored, and on the response to read back what the model produced.
     """
-    regions = []
+    return {m.group("name"): m.group("body") for m in _DYNAMIC_BLOCK.finditer(tex)}
 
+
+def build_context(tex: str) -> str:
+    """
+    The slice of the resume the model is allowed to see.
+
+    Everything from the first \\section to \\end{document} — the tailorable
+    regions plus the static sections around them, which the model needs in order
+    to judge what is relevant. Deliberately excludes two things: the preamble,
+    which cannot be corrupted if it is never sent, and the contact header above
+    the first section, which is the only place personal details live. Leaving
+    the header out of the payload is what makes a separate redaction step
+    unnecessary rather than merely correct.
+    """
+    start = tex.find("\\section{")
+    end = tex.find("\\end{document}")
+    if start == -1 or end == -1 or end <= start:
+        return ""
+    return tex[start:end].strip()
+
+
+def apply_fragments(tex: str, fragments: dict) -> str:
+    """
+    Splice tailored bodies into their marked regions, leaving everything else
+    byte-for-byte unchanged. A region with no accepted fragment keeps its
+    original body.
+    """
     def _swap(match) -> str:
-        regions.append(match.group(0))
-        return _placeholder(len(regions))
+        name = match.group("name")
+        body = fragments.get(name)
+        if body is None:
+            return match.group(0)
+        return f"{_DYNAMIC_START}({name})\n{body}\n{_DYNAMIC_END}"
 
-    # re.sub with a function treats the return value literally, so the backslashes
-    # in the placeholder need no escaping.
-    redacted = _REDACT_BLOCK.sub(_swap, tex)
-    return regions, redacted
+    # re.sub with a function treats the return value literally, so the
+    # backslashes throughout the LaTeX body need no escaping.
+    return _DYNAMIC_BLOCK.sub(_swap, tex)
 
 
-def restore_personal(tex: str, regions: list) -> Optional[str]:
+def validate_fragment(name: str, candidate: str, original: str) -> bool:
     """
-    Put the real regions back, in order.
+    Cheap structural checks on one returned region before it is spliced in.
 
-    Returns None if the model did not return exactly as many marked regions as
-    were sent. That mismatch means we cannot map placeholders back to originals
-    with confidence, and a resume carrying the wrong contact details — or none —
-    is worse than an untailored one, so the caller falls back to the base resume.
+    These catch a mangled fragment, not a dishonest one — an inflated verb or an
+    invented metric passes every check here, which is why the generated PDF is
+    still worth reading before you send it anywhere.
     """
-    found = _REDACT_BLOCK.findall(tex)
-    if len(found) != len(regions):
-        logger.error("Redaction markers mismatch: sent %d region(s), model returned %d. "
-                     "Cannot restore personal details safely.", len(regions), len(found))
-        return None
+    if not candidate or not candidate.strip():
+        logger.error("Fragment '%s': empty", name)
+        return False
 
-    remaining = iter(regions)
-    return _REDACT_BLOCK.sub(lambda _: next(remaining), tex)
+    leaked = [t for t in _SCAFFOLDING if t in candidate]
+    if leaked:
+        logger.error("Fragment '%s': contains %s — the model returned document "
+                     "scaffolding instead of just the region body",
+                     name, ", ".join(leaked))
+        return False
+
+    bare = _ESCAPED_BRACE.sub("", candidate)
+    if bare.count("{") != bare.count("}"):
+        logger.error("Fragment '%s': unbalanced braces (%d open, %d close) — "
+                     "this would fail the compile",
+                     name, bare.count("{"), bare.count("}"))
+        return False
+
+    ratio = len(candidate) / max(len(original), 1)
+    if not (config.MIN_OUTPUT_RATIO <= ratio <= config.MAX_OUTPUT_RATIO):
+        logger.error("Fragment '%s': %.2fx the original length (allowed %.2f-%.2f)",
+                     name, ratio, config.MIN_OUTPUT_RATIO, config.MAX_OUTPUT_RATIO)
+        return False
+
+    return True
 
 
 def build_payload(title: str, company: str, location: str,
@@ -161,9 +204,7 @@ def build_payload(title: str, company: str, location: str,
     base = load_base_resume()
     if not base:
         return None
-    _, redacted = (redact_personal(base) if config.RESUME_REDACT_PERSONAL
-                   else ([], base))
-    return build_prompt(title, company, location, description, redacted)
+    return build_prompt(title, company, location, description, base)
 
 
 def describe_posting(description: str, keywords: Optional[list] = None) -> str:
@@ -229,6 +270,13 @@ def build_prompt(title: str, company: str, location: str,
     if not template:
         return None
 
+    body = build_context(base_resume)
+    if not body:
+        logger.error("Could not locate the section body in %s — expected a "
+                     "\\section{...} somewhere before \\end{document}",
+                     config.BASE_RESUME_FILE)
+        return None
+
     description = describe_posting(description, keywords)
 
     return (
@@ -237,41 +285,8 @@ def build_prompt(title: str, company: str, location: str,
         .replace("<<COMPANY>>", company or "Unknown")
         .replace("<<LOCATION>>", location or "Unspecified")
         .replace("<<JOB_DESCRIPTION>>", description)
-        .replace("<<BASE_RESUME>>", base_resume)
+        .replace("<<RESUME_BODY>>", body)
     )
-
-
-def validate_latex(candidate: str, base: str) -> bool:
-    """
-    Cheap structural checks before spending a LaTeX compile on the output.
-
-    This catches a model that returned prose, a truncated document, or something
-    wildly different from the base. It does NOT catch the failure mode that
-    matters most — an inflated verb or an invented metric — which is why the
-    generated PDF is worth reading before you send it anywhere.
-    """
-    if not candidate or not candidate.strip():
-        logger.error("Validation failed: empty output")
-        return False
-
-    if "\\documentclass" not in candidate:
-        logger.error("Validation failed: no \\documentclass in output")
-        return False
-
-    if "\\end{document}" not in candidate:
-        logger.error("Validation failed: no \\end{document} — output likely truncated "
-                     "(try raising max output tokens or shortening the base resume)")
-        return False
-
-    ratio = len(candidate) / max(len(base), 1)
-    if not (config.MIN_OUTPUT_RATIO <= ratio <= config.MAX_OUTPUT_RATIO):
-        logger.error("Validation failed: output is %.2fx the base resume length "
-                     "(allowed %.2f-%.2f)", ratio, config.MIN_OUTPUT_RATIO,
-                     config.MAX_OUTPUT_RATIO)
-        return False
-
-    logger.debug("Validation passed (%.2fx base length)", ratio)
-    return True
 
 
 def tailor_latex(title: str, company: str, location: str,
@@ -280,6 +295,10 @@ def tailor_latex(title: str, company: str, location: str,
     """
     Return tailored LaTeX, or the untouched base resume if tailoring is off or
     fails. Always returns compilable source.
+
+    Only the marked regions are ever replaced. The preamble, the contact header
+    and the static sections carry through from the base resume byte-for-byte, so
+    a bad response can cost tailoring but cannot break the document.
     """
     if not config.gemini_available():
         logger.info("Gemini disabled — using base resume unmodified")
@@ -290,39 +309,55 @@ def tailor_latex(title: str, company: str, location: str,
                        "Gemini call and sending the base resume", title, company)
         return base_resume
 
-    regions, prompt_resume = (redact_personal(base_resume)
-                              if config.RESUME_REDACT_PERSONAL else ([], base_resume))
-    if config.RESUME_REDACT_PERSONAL:
-        if regions:
-            logger.info("Redacted %d personal region(s) from the payload", len(regions))
-        else:
-            logger.warning(
-                "RESUME_REDACT_PERSONAL is on but no %s/%s marker pairs found in %s — "
-                "the resume will be sent to Gemini in full, personal details included",
-                _REDACT_START, _REDACT_END, config.BASE_RESUME_FILE,
-            )
+    originals = split_dynamic(base_resume)
+    if not originals:
+        logger.warning("No %s(...) regions found in %s — nothing to tailor, "
+                       "sending the base resume unmodified",
+                       _DYNAMIC_START, config.BASE_RESUME_FILE)
+        return base_resume
 
-    prompt = build_prompt(title, company, location, description, prompt_resume, keywords)
+    prompt = build_prompt(title, company, location, description, base_resume, keywords)
     if not prompt:
         return base_resume
 
-    tailored = gemini.generate(prompt)
-    if not tailored:
+    raw = gemini.generate(prompt)
+    if not raw:
         logger.warning("Tailoring failed — falling back to base resume")
         return base_resume
 
-    if not validate_latex(tailored, prompt_resume):
-        logger.warning("Tailored output failed validation — falling back to base resume")
+    returned = split_dynamic(raw)
+    if not returned:
+        logger.warning("Model returned no %s(...) regions — falling back to base "
+                       "resume", _DYNAMIC_START)
         return base_resume
 
-    if regions:
-        restored = restore_personal(tailored, regions)
-        if restored is None:
-            logger.warning("Could not restore personal details — falling back to base resume")
-            return base_resume
-        tailored = restored
+    unexpected = set(returned) - set(originals)
+    if unexpected:
+        logger.warning("Ignoring %d returned region(s) the base resume does not "
+                       "define: %s", len(unexpected), ", ".join(sorted(unexpected)))
 
-    return tailored
+    # Per-region fallback rather than all-or-nothing: one mangled fragment costs
+    # its own section, not the tailoring of every other section.
+    accepted = {}
+    for name, original in originals.items():
+        candidate = returned.get(name)
+        if candidate is None:
+            logger.warning("Fragment '%s' missing from the response — keeping the "
+                           "base version", name)
+            continue
+        if not validate_fragment(name, candidate, original):
+            logger.warning("Fragment '%s' failed validation — keeping the base "
+                           "version", name)
+            continue
+        accepted[name] = candidate
+
+    if not accepted:
+        logger.warning("No fragment survived validation — falling back to base resume")
+        return base_resume
+
+    logger.info("Tailored %d of %d region(s): %s",
+                len(accepted), len(originals), ", ".join(accepted))
+    return apply_fragments(base_resume, accepted)
 
 
 def generate_resume(title: str, company: str, location: str = "",

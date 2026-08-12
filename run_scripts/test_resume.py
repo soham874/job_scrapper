@@ -35,7 +35,7 @@ from common.resume.service import (  # noqa: E402
     build_payload,
     generate_resume,
     load_base_resume,
-    redact_personal,
+    split_dynamic,
     tailor_latex,
 )
 
@@ -64,7 +64,6 @@ def print_diagnostics() -> bool:
     print(f"Prompt file     : {config.PROMPT_FILE}")
     print(f"Base resume     : {config.BASE_RESUME_FILE}")
     print(f"Output dir      : {config.OUTPUT_DIR}")
-    print(f"Redact personal : {config.RESUME_REDACT_PERSONAL}")
 
     ok = True
 
@@ -73,6 +72,13 @@ def print_diagnostics() -> bool:
         if not path.exists():
             print(f"  MISSING       : {label} not found at {path}")
             ok = False
+
+    if config.BASE_RESUME_FILE.exists():
+        regions = split_dynamic(load_base_resume() or "")
+        print(f"Tailorable      : {', '.join(regions) if regions else 'none'}")
+        if not regions:
+            print("  WARNING       : no RESUME_DYNAMIC_START(...) regions — the base "
+                  "resume will be used unmodified")
 
     engine = find_engine()
     if engine:
@@ -153,13 +159,11 @@ def main() -> int:
         print(payload)
         print("=" * 70)
         print(f"\n{len(payload)} characters would be sent to {config.GEMINI_MODEL}.")
-        if config.RESUME_REDACT_PERSONAL:
-            regions, _ = redact_personal(load_base_resume() or "")
-            print(f"{len(regions)} region(s) redacted. Search the text above for any "
-                  f"personal detail that still appears and wrap it in a "
-                  f"RESUME_REDACT_START/END pair.")
-        else:
-            print("RESUME_REDACT_PERSONAL is OFF — the resume is sent in full.")
+        regions = split_dynamic(load_base_resume() or "")
+        print(f"{len(regions)} tailorable region(s): {', '.join(regions) or 'none'}.")
+        print("The preamble and the contact header above the first \\section are "
+              "not part of the payload — search the text above for any personal "
+              "detail that still appears.")
         return 0
 
     # --dump-latex stops before compiling, so it works without a LaTeX install.
