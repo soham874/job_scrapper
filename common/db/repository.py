@@ -110,13 +110,14 @@ def update_job_decision(job_id: int, decision: str) -> bool:
 def get_job_by_id(job_id: int) -> Optional[dict]:
     """
     Return a job with its company name.
-    Keys: id, title, location, application_link, user_decision, company, ats_job_id, company_id.
+    Keys: id, title, location, application_link, user_decision, company, ats_job_id,
+    company_id, linkedin_company_ids (comma-separated string, None if not set).
     """
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
         "SELECT j.id, j.title, j.location, j.application_link, j.user_decision, "
-        "c.company_name, j.ats_job_id, j.company_id "
+        "c.company_name, j.ats_job_id, j.company_id, c.linkedin_company_ids "
         "FROM job_info j JOIN company_info c ON j.company_id = c.id "
         "WHERE j.id = %s",
         (job_id,),
@@ -134,6 +135,7 @@ def get_job_by_id(job_id: int) -> Optional[dict]:
         "company": row[5],
         "ats_job_id": row[6],
         "company_id": row[7],
+        "linkedin_company_ids": row[8],
     }
 
 
@@ -290,9 +292,14 @@ def load_companies_by_ats(ats_name: str) -> list:
 
 
 def upsert_company(company_name: str, base_country: str, target_location: str,
-                   ats: str, ats_link: str, enabled: bool) -> str:
+                   ats: str, ats_link: str, enabled: bool,
+                   linkedin_company_ids: Optional[str] = None) -> str:
     """
     Insert or update a company by name, stamping synced_at.
+
+    linkedin_company_ids is an optional comma-separated string (a company can
+    exist as multiple distinct entities on LinkedIn) — pass None to
+    clear/leave it unset when the sheet has no value for a company.
 
     Returns 'inserted', 'updated' or 'unchanged'. Raises on failure so the
     caller can abort the sync rather than half-applying the sheet.
@@ -302,16 +309,19 @@ def upsert_company(company_name: str, base_country: str, target_location: str,
     try:
         cursor.execute(
             "INSERT INTO company_info "
-            "(company_name, base_country, target_location, ats, ats_link, enabled, synced_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, NOW()) "
+            "(company_name, base_country, target_location, ats, ats_link, enabled, "
+            "linkedin_company_ids, synced_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, NOW()) "
             "ON DUPLICATE KEY UPDATE "
             "base_country = VALUES(base_country), "
             "target_location = VALUES(target_location), "
             "ats = VALUES(ats), "
             "ats_link = VALUES(ats_link), "
             "enabled = VALUES(enabled), "
+            "linkedin_company_ids = VALUES(linkedin_company_ids), "
             "synced_at = NOW()",
-            (company_name, base_country, target_location, ats, ats_link, int(enabled)),
+            (company_name, base_country, target_location, ats, ats_link,
+             int(enabled), linkedin_company_ids),
         )
         conn.commit()
         # MySQL reports 1 for a fresh insert, 2 when an existing row changed,

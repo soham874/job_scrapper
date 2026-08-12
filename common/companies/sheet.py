@@ -42,6 +42,10 @@ COLUMN_MAP = {
     "ats": "ATS",
     "ats_link": "ATS Link",
     "enabled": "Enable in tracker",
+    # A company can exist as multiple distinct entities on LinkedIn (e.g.
+    # "Walmart Global Tech" vs "Walmart Global Tech India") — the cell may
+    # hold a comma-separated list of ids to search across all of them.
+    "linkedin_company_ids": "LinkedIn Company Id",
 }
 
 # Without these four a row cannot be acted on at all.
@@ -121,7 +125,12 @@ def _parse_enabled(raw: str, company_name: str) -> bool:
 def fetch_companies() -> List[Dict]:
     """
     Return one dict per sheet row with keys: company_name, base_country,
-    target_location, ats, ats_link, enabled.
+    target_location, ats, ats_link, enabled, linkedin_company_ids.
+
+    linkedin_company_ids is optional — blank cells (or a missing column
+    entirely) come back as None. The cell may hold a single id or a
+    comma-separated list (e.g. "2029, 9390173"); it's normalised here to a
+    clean comma-separated string with no surrounding whitespace.
 
     Rows with a blank company name are skipped. Raises SheetError if the sheet
     is unreachable or a required column is missing.
@@ -168,6 +177,11 @@ def fetch_companies() -> List[Dict]:
                 name, line_no,
             )
 
+        linkedin_ids = [
+            part.strip() for part in cell(row, "linkedin_company_ids").split(",")
+            if part.strip()
+        ]
+
         companies.append({
             "company_name": name,
             "base_country": cell(row, "base_country"),
@@ -175,6 +189,7 @@ def fetch_companies() -> List[Dict]:
             "ats": ats,
             "ats_link": ats_link,
             "enabled": enabled,
+            "linkedin_company_ids": ",".join(linkedin_ids) or None,
         })
 
     logger.info(
