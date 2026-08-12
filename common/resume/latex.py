@@ -129,7 +129,12 @@ def compile_pdf(tex_source: str, output_path: Path) -> Optional[Path]:
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with tempfile.TemporaryDirectory(prefix="resume-latex-") as tmp:
+    # dir= keeps the scratch directory beside the output instead of in /tmp. A
+    # snap-confined tectonic gets its own private /tmp and cannot see the host's,
+    # so a /tmp workdir dies with "output directory does not exist" before it
+    # writes any log. The output dir is created just above and is somewhere the
+    # user can already write, which makes it safe for every engine.
+    with tempfile.TemporaryDirectory(prefix="resume-latex-", dir=output_path.parent) as tmp:
         workdir = Path(tmp)
         stem = output_path.stem
         tex_path = workdir / f"{stem}.tex"
@@ -158,8 +163,13 @@ def compile_pdf(tex_source: str, output_path: Path) -> Optional[Path]:
                 return None
 
             if result.returncode != 0:
-                logger.error("%s failed on pass %d (exit %d). Log tail:\n%s",
-                             engine, attempt, result.returncode, _log_tail(workdir, stem))
+                # stderr matters as much as the log tail: an engine that fails
+                # before TeX starts (bad arguments, unreachable workdir) explains
+                # itself only on stderr and never writes a .log at all.
+                logger.error("%s failed on pass %d (exit %d). stderr:\n%s\nLog tail:\n%s",
+                             engine, attempt, result.returncode,
+                             (result.stderr or "").strip()[-2000:] or "(empty)",
+                             _log_tail(workdir, stem))
                 return None
 
         produced = workdir / f"{stem}.pdf"
