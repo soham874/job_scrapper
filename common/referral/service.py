@@ -69,22 +69,29 @@ def format_referral_messages(title: str, company: str, job_id: str) -> List[str]
     return parts
 
 
-def send_applied_response(job: dict, reply_to_message_id: Optional[int] = None) -> None:
+def build_referral_text(job: dict) -> str:
     """
-    After the user clicks Apply, send the referral template as a single
-    message in reply to the original job message.
-    """
-    if not is_configured():
-        return
+    Render the referral message for a job — the text the user forwards to
+    whoever they are asking for a referral.
 
+    Returns "" when the template could not be read.
+    """
     company = job.get("company", "Unknown")
     title = job.get("title", "Unknown")
     ats_job_id = job.get("ats_job_id", "")
 
-    # Referral message parts
     parts = format_referral_messages(title, company, ats_job_id)
-    if not parts:
-        return
+    return "\n\n".join(parts)
 
-    combined = "\n\n".join(parts)
-    send_message(combined, reply_to_message_id=reply_to_message_id)
+
+def send_referral_text(text: str, reply_to_message_id: Optional[int] = None) -> Optional[int]:
+    """
+    Send the referral message on its own, in reply to the original job message.
+
+    Used when there is no resume to attach it to; otherwise the text rides
+    along as the resume document's caption so both arrive as one message.
+    """
+    if not text or not is_configured():
+        return None
+
+    return send_message(text, reply_to_message_id=reply_to_message_id)

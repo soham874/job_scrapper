@@ -15,7 +15,11 @@ from common.db.repository import (
 )
 from common.notifications.formatter import format_decided_message
 from common.notifications.telegram import answer_callback_query, edit_message
-from common.referral.service import build_linkedin_search_url, send_applied_response
+from common.referral.service import (
+    build_linkedin_search_url,
+    build_referral_text,
+    send_referral_text,
+)
 from common.resume.dispatch import dispatch_async
 
 logger = get_logger("bot.handlers")
@@ -57,9 +61,6 @@ def handle_decision(callback_id: str, message_id: int, job_id: int, action: str)
     answer_callback_query(callback_id, label)
 
     if decision == "applied":
-        # Send LinkedIn search link + referral message parts
-        send_applied_response(job, reply_to_message_id=message_id)
-
         # Record in application_status
         insert_application_status(
             company_id=job["company_id"],
@@ -81,12 +82,20 @@ def handle_decision(callback_id: str, message_id: int, job_id: int, action: str)
             logger.warning("Could not parse positive_matches for job %d", job_id)
             keywords = []
 
-        dispatch_async(
+        # The referral message is sent as the resume's caption so the user can
+        # forward text and attachment in one go. That means waiting on the
+        # generation thread, which is why nothing is sent here.
+        referral_text = build_referral_text(job)
+        started = dispatch_async(
             job,
             description=analysis.get("job_description") or "",
             reply_to_message_id=message_id,
             keywords=keywords,
+            referral_text=referral_text,
         )
+        if started is None:
+            # Resume generation is off — nothing to attach it to.
+            send_referral_text(referral_text, reply_to_message_id=message_id)
 
     logger.info("Job %d marked as %s", job_id, decision)
     return {"ok": True}
