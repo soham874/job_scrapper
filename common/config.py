@@ -5,4 +5,4 @@ common.companies.sync and is read back out of company_info by
 load_companies_by_ats().
 """
 
-CRON_INTERVAL_SECONDS = 3600  # 1 hour
+CRON_INTERVAL_SECONDS = 1800  # 1 hour

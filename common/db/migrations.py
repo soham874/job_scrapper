@@ -18,63 +18,66 @@ def run_migrations():
 
     Tracks applied migrations in a `schema_version` table so each
     script runs exactly once, in alphabetical order.
+
+    Holds one pooled connection for the whole run: the per-statement commits
+    below are deliberate, so DDL with FK references resolves as it goes.
     """
     ensure_schema()
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "CREATE TABLE IF NOT EXISTS schema_version ("
-        "  version VARCHAR(255) PRIMARY KEY,"
-        "  applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
-        ")"
-    )
-    conn.commit()
-
-    cursor.execute("SELECT version FROM schema_version")
-    applied = {row[0] for row in cursor.fetchall()}
-
-    if not MIGRATIONS_DIR.exists():
-        logger.warning("Migrations directory not found: %s", MIGRATIONS_DIR)
-        cursor.close()
-        return
-
-    scripts = sorted(MIGRATIONS_DIR.glob("V*.sql"))
-    for script in scripts:
-        version = script.stem  # e.g. V001_create_tables
-        if version in applied:
-            logger.debug("Migration %s already applied — skipping", version)
-            continue
-
-        logger.info("Applying migration: %s", version)
-        sql = script.read_text(encoding="utf-8")
+    with get_connection() as conn:
+        cursor = conn.cursor(buffered=True)
         try:
-            # Execute each statement individually (MySQL connector
-            # does not support multi-statement executescript).
-            # Commit after each so DDL with FK references resolves.
-            # Strip comment lines *before* splitting on ';'. A semicolon inside
-            # a comment would otherwise cut a statement in half and leave the
-            # trailing comment text prefixed to the next one.
-            body = "\n".join(
-                line for line in sql.splitlines()
-                if line.strip() and not line.strip().startswith("--")
-            )
-            for raw_statement in body.split(";"):
-                statement = raw_statement.strip()
-                if statement:
-                    cursor.execute(statement)
-                    conn.commit()
             cursor.execute(
-                "INSERT INTO schema_version (version) VALUES (%s)", (version,)
+                "CREATE TABLE IF NOT EXISTS schema_version ("
+                "  version VARCHAR(255) PRIMARY KEY,"
+                "  applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                ")"
             )
             conn.commit()
-            logger.info("Migration %s applied successfully", version)
-        except mysql.connector.IntegrityError:
-            # Another process already applied this migration concurrently — safe to skip
-            conn.rollback()
-            logger.info("Migration %s already recorded by another process — skipping", version)
-        except Exception:
-            conn.rollback()
-            logger.exception("Migration %s FAILED", version)
-            raise
-    cursor.close()
+
+            cursor.execute("SELECT version FROM schema_version")
+            applied = {row[0] for row in cursor.fetchall()}
+
+            if not MIGRATIONS_DIR.exists():
+                logger.warning("Migrations directory not found: %s", MIGRATIONS_DIR)
+                return
+
+            scripts = sorted(MIGRATIONS_DIR.glob("V*.sql"))
+            for script in scripts:
+                version = script.stem  # e.g. V001_create_tables
+                if version in applied:
+                    logger.debug("Migration %s already applied — skipping", version)
+                    continue
+
+                logger.info("Applying migration: %s", version)
+                sql = script.read_text(encoding="utf-8")
+                try:
+                    # Execute each statement individually (MySQL connector
+                    # does not support multi-statement executescript).
+                    # Commit after each so DDL with FK references resolves.
+                    # Strip comment lines *before* splitting on ';'. A semicolon inside
+                    # a comment would otherwise cut a statement in half and leave the
+                    # trailing comment text prefixed to the next one.
+                    body = "\n".join(
+                        line for line in sql.splitlines()
+                        if line.strip() and not line.strip().startswith("--")
+                    )
+                    for raw_statement in body.split(";"):
+                        statement = raw_statement.strip()
+                        if statement:
+                            cursor.execute(statement)
+                            conn.commit()
+                    cursor.execute(
+                        "INSERT INTO schema_version (version) VALUES (%s)", (version,)
+                    )
+                    conn.commit()
+                    logger.info("Migration %s applied successfully", version)
+                except mysql.connector.IntegrityError:
+                    # Another process already applied this migration concurrently — safe to skip
+                    conn.rollback()
+                    logger.info("Migration %s already recorded by another process — skipping", version)
+                except Exception:
+                    conn.rollback()
+                    logger.exception("Migration %s FAILED", version)
+                    raise
+        finally:
+            cursor.close()
