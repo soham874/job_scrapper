@@ -159,6 +159,34 @@ Get push notifications for new jobs via a Telegram bot. After each cron run, if 
 
 If these vars are not set, the notifier is silently skipped and the scraper runs as usual.
 
+### Deciding on a job
+
+Each notification carries a single **Apply** button. Pressing it records the
+application, edits the message to show the decision, and kicks off resume
+generation and the referral message.
+
+There is no Reject button. A job you do not apply to is rejected by the
+sweeper once it has gone `SWEEP_AGE_HOURS` without a decision — ignoring a
+notification *is* the rejection. The sweeper runs inside the bot process and
+touches only the database; it never edits or deletes the original Telegram
+message, since by the time a job is swept the notification has already aged
+out of the chat.
+
+Both knobs are optional and default to the values below:
+
+```
+# Hours a job may sit undecided before the sweeper rejects it
+SWEEP_AGE_HOURS=24
+# How often the sweeper runs, in seconds
+SWEEP_INTERVAL_SECONDS=21600
+```
+
+To clear a backlog immediately rather than waiting for the next tick:
+
+```bash
+python3 run_scripts/run_sweeper.py
+```
+
 ## Logs
 
 Per-borg log files are written to the `logs/` directory:

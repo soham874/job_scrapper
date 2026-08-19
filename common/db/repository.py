@@ -111,6 +111,55 @@ def update_job_decision(job_id: int, decision: str) -> bool:
             cursor.close()
 
 
+def expire_stale_jobs(age_hours: int) -> int:
+    """
+    Mark every still-undecided job older than age_hours as 'rejected'.
+
+    Replaces the old Reject button: silence past the response window is taken
+    as a no. Returns the number of rows updated.
+
+    The filter and the write happen in one statement so a job the user applies
+    to mid-sweep is never overwritten — the WHERE clause re-checks
+    user_decision IS NULL under the row lock.
+    """
+    with get_connection() as conn:
+        cursor = conn.cursor(buffered=True)
+        try:
+            cursor.execute(
+                "UPDATE job_info SET user_decision = 'rejected' "
+                "WHERE user_decision IS NULL "
+                "AND created_ts < (NOW() - INTERVAL %s HOUR)",
+                (age_hours,),
+            )
+            return cursor.rowcount
+        except Exception:
+            conn.rollback()
+            logger.exception("Failed to expire stale jobs older than %d hours", age_hours)
+            return 0
+        finally:
+            cursor.close()
+
+
+def count_stale_jobs(age_hours: int) -> int:
+    """Count undecided jobs past the response window, without changing them."""
+    with get_connection() as conn:
+        cursor = conn.cursor(buffered=True)
+        try:
+            cursor.execute(
+                "SELECT COUNT(*) FROM job_info "
+                "WHERE user_decision IS NULL "
+                "AND created_ts < (NOW() - INTERVAL %s HOUR)",
+                (age_hours,),
+            )
+            row = cursor.fetchone()
+            return row[0] if row else 0
+        except Exception:
+            logger.exception("Failed to count stale jobs older than %d hours", age_hours)
+            return 0
+        finally:
+            cursor.close()
+
+
 def get_job_by_id(job_id: int) -> Optional[dict]:
     """
     Return a job with its company name.

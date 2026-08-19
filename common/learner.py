@@ -17,11 +17,25 @@ from common.logger import get_logger
 
 logger = get_logger("common.learner")
 
-# Minimum decided jobs containing a keyword before we adjust its weight
-MIN_KEYWORD_SAMPLES = 3
+# Minimum decided jobs containing a keyword before we adjust its weight.
+#
+# Rejection is no longer a button click — common.sweeper marks every job the
+# user ignored, so "decided" now means "notified" and the accept rate sits
+# around 3-5% instead of the ~30% it was when only clicked jobs counted.
+# Lift is a ratio of rates and so is unaffected by that shift, but sample
+# sizes are: at a 3% base rate, three samples carry no information, and a
+# single lucky accept yields lift ~11 and pins the keyword to MAX_MULTIPLIER.
+MIN_KEYWORD_SAMPLES = 25
 
 # Minimum total decided jobs before recalibration activates at all
-MIN_TOTAL_DECISIONS = 10
+MIN_TOTAL_DECISIONS = 150
+
+# Shrinkage strength, in pseudo-observations drawn at the overall accept rate.
+# Blended into every keyword's rate so that thinly-observed keywords sit near
+# lift 1.0 (no adjustment) and only sustained evidence moves a weight. Roughly:
+# a keyword needs to beat the base rate across ~50 jobs before it earns half
+# the boost its raw rate alone would have given it.
+SHRINKAGE_STRENGTH = 50
 
 # Lift thresholds — keywords within the dead zone stay at 1.0
 LIFT_BOOST_THRESHOLD = 1.3
@@ -105,7 +119,10 @@ def recalibrate() -> Dict[str, float]:
         if sample_count < MIN_KEYWORD_SAMPLES:
             continue
 
-        kw_rate = stats["accepted"] / sample_count
+        # Shrink toward the overall rate before taking the ratio, so a keyword
+        # seen a handful of times cannot swing its own weight on noise.
+        kw_rate = ((stats["accepted"] + SHRINKAGE_STRENGTH * overall_rate)
+                   / (sample_count + SHRINKAGE_STRENGTH))
         lift = kw_rate / overall_rate
         multiplier = _compute_multiplier(lift)
 
