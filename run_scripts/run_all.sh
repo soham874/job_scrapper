@@ -80,6 +80,10 @@ echo "[run_all] Starting Oracle borg (port 5003)..."
 python3 -m uvicorn borgs.oracle.api:app --host 0.0.0.0 --port 5003 &
 CHILD_PIDS+=($!)
 
+echo "[run_all] Starting Ashby borg (port 5004)..."
+python3 -m uvicorn borgs.ashby.api:app --host 0.0.0.0 --port 5004 &
+CHILD_PIDS+=($!)
+
 echo "[run_all] All services running. PIDs: ${CHILD_PIDS[*]}"
 echo "[run_all] Press Ctrl-C to stop all."
 

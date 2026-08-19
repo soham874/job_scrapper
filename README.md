@@ -1,6 +1,6 @@
 # Job Scrapper Monorepo
 
-A Python monorepo that scrapes job postings from **Workday** and **Greenhouse** career pages, filtered for India-based roles posted in the last 24 hours.
+A Python monorepo that scrapes job postings from **Workday**, **Greenhouse**, **Oracle** and **Ashby** career pages, filtered for India-based roles posted in the last 24 hours.
 
 ## Structure
 
@@ -15,13 +15,23 @@ job-scrapper/
 │   │   ├── scraper.py    # WorkdayScraper (from POC notebook)
 │   │   ├── cron.py       # Hourly cron loop + CSV writer
 │   │   └── api.py        # FastAPI (health + trigger)
-│   └── greenhouse/       # Greenhouse borg
-│       ├── scraper.py    # GreenhouseScraper (from POC notebook)
-│       ├── cron.py       # Hourly cron loop + CSV writer
+│   ├── greenhouse/       # Greenhouse borg
+│   │   ├── scraper.py    # GreenhouseScraper (from POC notebook)
+│   │   ├── cron.py       # Hourly cron loop + CSV writer
+│   │   └── api.py        # FastAPI (health + trigger)
+│   ├── oracle/           # Oracle Recruiting Cloud borg
+│   │   ├── scraper.py    # OracleScraper
+│   │   ├── cron.py       # Hourly cron loop
+│   │   └── api.py        # FastAPI (health + trigger)
+│   └── ashby/            # Ashby borg
+│       ├── scraper.py    # AshbyScraper
+│       ├── cron.py       # Hourly cron loop
 │       └── api.py        # FastAPI (health + trigger)
 ├── run_scripts/          # Bash launchers
 │   ├── run_workday.sh
 │   ├── run_greenhouse.sh
+│   ├── run_oracle.sh
+│   ├── run_ashby.sh
 │   └── run_all.sh
 ├── jobs/                 # Output CSVs (auto-created)
 ├── logs/                 # Log files (auto-created)
@@ -46,6 +56,8 @@ pip install -r requirements.txt
 ```bash
 bash run_scripts/run_workday.sh      # port 5001
 bash run_scripts/run_greenhouse.sh   # port 5002
+bash run_scripts/run_oracle.sh       # port 5003
+bash run_scripts/run_ashby.sh        # port 5004
 ```
 
 ### All borgs together
@@ -65,6 +77,8 @@ Each borg exposes:
 
 - **Workday**: `http://localhost:5001`
 - **Greenhouse**: `http://localhost:5002`
+- **Oracle**: `http://localhost:5003`
+- **Ashby**: `http://localhost:5004`
 
 ## Cron
 
@@ -84,11 +98,15 @@ punctuation (`ATS Link`, `ats_link` and `Ats-Link` are all the same column).
 | Column               | Required | Purpose                                              |
 |----------------------|----------|------------------------------------------------------|
 | `Company Name`       | yes      | Unique key. Renaming a company creates a new row.     |
-| `ATS`                | yes      | `workday`, `greenhouse` or `oracle` — picks the borg. |
+| `ATS`                | yes      | `workday`, `greenhouse`, `oracle` or `ashby` — picks the borg. |
 | `ATS Link`           | yes      | Career-site URL the scraper hits.                     |
 | `Enable in tracker`  | yes      | `Yes` to track, `No` to stop. Blank counts as `No`.   |
 | `Base Country`       | no       | Stored on the company row.                            |
 | `Target Location`    | no       | Stored on the company row.                            |
+
+For `ashby`, the `ATS Link` only has to identify the board. The board name on its own
+(`confluent`), the public board URL (`https://jobs.ashbyhq.com/confluent`), a link to a
+single posting, and the posting-API URL all resolve to the same board.
 
 Switching a company to `No` — or deleting its row — only stops future scraping. The
 company, its past jobs and its application history stay in the database, and flipping it
@@ -116,7 +134,7 @@ back to `Yes` resumes tracking against the same row.
 
 ### When it syncs
 
-Every borg syncs at the top of each run, before scraping. The three borgs share a MySQL
+Every borg syncs at the top of each run, before scraping. The borgs share a MySQL
 named lock and a 5-minute freshness window, so only the first one through actually calls
 the Sheets API. `run_all.sh` also syncs once at startup so credential problems surface
 immediately rather than an hour later in a log file.
@@ -147,4 +165,5 @@ Per-borg log files are written to the `logs/` directory:
 - `logs/workday.log`
 - `logs/greenhouse.log`
 - `logs/oracle.log`
+- `logs/ashby.log`
 - `logs/companies.sync.log`
