@@ -10,11 +10,12 @@ from contextlib import asynccontextmanager
 import requests
 from fastapi import FastAPI, Request
 
-from common.bot.handlers import handle_decision
+from common.bot.handlers import handle_apply
 from common.logger import get_logger
 from common.db.repository import get_company_id, insert_job
 from common.notifications.formatter import format_job_message, make_inline_keyboard
 from common.notifications.telegram import TELEGRAM_BOT_TOKEN, answer_callback_query, send_message
+from common.sweeper import start_sweeper
 
 logger = get_logger("bot.app")
 
@@ -43,6 +44,10 @@ def _register_webhook() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _register_webhook()
+    # The bot process owns every user decision — the Apply callbacks it serves
+    # and, by timeout, the rejections it never receives. Sweeping here keeps
+    # both halves in one place and out of the borgs.
+    start_sweeper()
     yield
 
 
@@ -109,17 +114,17 @@ async def telegram_webhook(request: Request):
         answer_callback_query(callback_id, "Invalid request")
         return {"ok": True}
 
-    # Parse callback data: "apply:123" or "reject:123"
+    # Parse callback data: "apply:123". Apply is the only button — a job the
+    # user does not apply to is rejected by common.sweeper once it ages out.
     parts = data.split(":", 1)
-    if len(parts) != 2 or parts[0] not in ("apply", "reject"):
+    if len(parts) != 2 or parts[0] != "apply":
         answer_callback_query(callback_id, "Unknown action")
         return {"ok": True}
 
-    action = parts[0]
     try:
         job_id = int(parts[1])
     except ValueError:
         answer_callback_query(callback_id, "Invalid job ID")
         return {"ok": True}
 
-    return handle_decision(callback_id, message_id, job_id, action)
+    return handle_apply(callback_id, message_id, job_id)

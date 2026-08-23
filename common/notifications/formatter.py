@@ -30,39 +30,42 @@ def format_job_message(job: Dict[str, str], index: int = 0, total: int = 0,
     return header + "\n".join(lines)
 
 
-def format_decided_message(job: dict, decision: str,
+def format_applied_message(job: dict,
                            referral_search_url: Optional[str] = None) -> str:
-    """Format a job message after the user has made a decision."""
+    """Format a job message after the user has applied.
+
+    Only the applied case is rendered. A rejected job is never re-rendered:
+    the sweeper decides it hours after the fact, by which point the original
+    notification has aged out of the chat.
+    """
     company = job.get("company", "Unknown")
     title = job.get("title", "Unknown")
     location = job.get("location", "Unknown")
     link = job.get("application_link", "")
 
-    if decision == "applied":
-        status = "✅ APPLIED"
-    else:
-        status = "❌ REJECTED"
-
     lines = [
-        f"<b>{status}</b>\n",
+        "<b>✅ APPLIED</b>\n",
         f"🏢 <b>{company}</b>",
         f"📌 {title}",
         f"📍 {location}",
     ]
-    if decision == "applied" and link:
+    if link:
         lines.append(f'🔗 <a href="{link}">Apply</a>')
-    if decision == "applied" and referral_search_url:
+    if referral_search_url:
         lines.append(f'🔍 <a href="{referral_search_url}">Find referrers at {company} on LinkedIn</a>')
     return "\n".join(lines)
 
 
 def make_inline_keyboard(job_id: int) -> dict:
-    """Build an InlineKeyboardMarkup with Apply/Reject buttons."""
+    """Build an InlineKeyboardMarkup with the Apply button.
+
+    Apply is the only action. Declining is expressed by ignoring the message —
+    common.sweeper rejects anything left undecided past the response window.
+    """
     return {
         "inline_keyboard": [
             [
                 {"text": "✅ Apply", "callback_data": f"apply:{job_id}"},
-                {"text": "❌ Reject", "callback_data": f"reject:{job_id}"},
             ]
         ]
     }

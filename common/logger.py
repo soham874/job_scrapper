@@ -30,7 +30,7 @@ def get_logger(borg_name: str) -> logging.Logger:
     ch.setLevel(logging.INFO)
 
     formatter = logging.Formatter(
-        "%(asctime)s | %(name)s | %(levelname)-7s | %(message)s",
+        "%(asctime)s %(levelname)s --- [%(name)s] : %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
     fh.setFormatter(formatter)
