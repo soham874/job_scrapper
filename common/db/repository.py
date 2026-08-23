@@ -455,3 +455,272 @@ def count_companies() -> int:
         finally:
             cursor.close()
     return row[0] if row else 0
+
+
+# ---------------------------------------------------------------------------
+# Application tracking (V015)
+#
+# insert_application_status above writes the row once, at accept time. The
+# functions below are what the Telegram menu drives it with afterwards.
+# ---------------------------------------------------------------------------
+
+_APPLICATION_COLUMNS = (
+    "j.id, c.company_name, j.title, j.location, j.application_link, j.ats_job_id, "
+    "a.status, a.applied_on, a.next_important_date, a.next_important_task, a.poc, "
+    "a.updated_at, c.linkedin_company_ids, j.company_id, "
+    "DATEDIFF(CURDATE(), a.applied_on), DATEDIFF(NOW(), a.updated_at)"
+)
+
+_APPLICATION_FROM = (
+    "FROM application_status a "
+    "JOIN job_info j ON j.id = a.job_id "
+    "JOIN company_info c ON c.id = j.company_id "
+)
+
+
+def _application_row_to_dict(row) -> dict:
+    """Map a _APPLICATION_COLUMNS row onto the dict the bot and dashboard use."""
+    return {
+        "job_id": row[0],
+        "company": row[1],
+        "title": row[2],
+        "location": row[3],
+        "application_link": row[4],
+        "ats_job_id": row[5],
+        "status": row[6],
+        "applied_on": row[7],
+        "next_important_date": row[8],
+        "next_important_task": row[9],
+        "poc": row[10],
+        "updated_at": row[11],
+        "linkedin_company_ids": row[12],
+        "company_id": row[13],
+        "days_since_applied": row[14],
+        "days_idle": row[15],
+    }
+
+
+def get_application_by_job_id(job_id: int) -> Optional[dict]:
+    """
+    Return one application joined to its job and company, or None.
+
+    company_info is joined through job_info.company_id rather than
+    application_status.company_id: the latter is a nullable duplicate from
+    V001, and an INNER JOIN on it would silently drop a row where it is unset.
+    """
+    with get_connection() as conn:
+        cursor = conn.cursor(buffered=True)
+        try:
+            cursor.execute(
+                f"SELECT {_APPLICATION_COLUMNS} {_APPLICATION_FROM} WHERE a.job_id = %s",
+                (job_id,),
+            )
+            row = cursor.fetchone()
+        finally:
+            cursor.close()
+    return _application_row_to_dict(row) if row else None
+
+
+def _touch_application(cursor, job_id: int, assignments: str, params: tuple) -> int:
+    """
+    Run an UPDATE against one application row and report whether it exists.
+
+    updated_at is always set explicitly rather than left to the column's
+    ON UPDATE clause, so that re-selecting the value a row already holds still
+    counts as the user touching it — that timestamp is what the staleness
+    reminder reads, and confirming a status is meaningful activity.
+
+    Returns 1 if the row exists, 0 if there is no application for this job.
+    """
+    cursor.execute(
+        f"UPDATE application_status SET {assignments}, updated_at = NOW() WHERE job_id = %s",
+        params + (job_id,),
+    )
+    if cursor.rowcount > 0:
+        return 1
+    # rowcount is also 0 when every assigned value already matched within the
+    # same second, so absence has to be confirmed rather than inferred.
+    cursor.execute("SELECT 1 FROM application_status WHERE job_id = %s", (job_id,))
+    return 1 if cursor.fetchone() else 0
+
+
+def update_application_status(job_id: int, status: str) -> bool:
+    """Move an application to a new status. False if it has no row."""
+    with get_connection() as conn:
+        cursor = conn.cursor(buffered=True)
+        try:
+            found = _touch_application(cursor, job_id, "status = %s", (status,))
+            if not found:
+                logger.warning("No application row for job %d — status not updated", job_id)
+            return bool(found)
+        except Exception:
+            conn.rollback()
+            logger.exception("Failed to set status '%s' for job %d", status, job_id)
+            return False
+        finally:
+            cursor.close()
+
+
+def set_next_action(job_id: int, next_date, task: Optional[str]) -> bool:
+    """
+    Set (or clear) the follow-up date and task for an application.
+
+    Pass next_date=None and task=None to clear both.
+    """
+    with get_connection() as conn:
+        cursor = conn.cursor(buffered=True)
+        try:
+            found = _touch_application(
+                cursor,
+                job_id,
+                "next_important_date = %s, next_important_task = %s",
+                (next_date, task[:500] if task else None),
+            )
+            if not found:
+                logger.warning("No application row for job %d — reminder not set", job_id)
+            return bool(found)
+        except Exception:
+            conn.rollback()
+            logger.exception("Failed to set next action for job %d", job_id)
+            return False
+        finally:
+            cursor.close()
+
+
+def set_poc(job_id: int, poc: Optional[str]) -> bool:
+    """Set (or clear) the point of contact for an application."""
+    with get_connection() as conn:
+        cursor = conn.cursor(buffered=True)
+        try:
+            found = _touch_application(
+                cursor, job_id, "poc = %s", (poc[:255] if poc else None,)
+            )
+            if not found:
+                logger.warning("No application row for job %d — poc not set", job_id)
+            return bool(found)
+        except Exception:
+            conn.rollback()
+            logger.exception("Failed to set poc for job %d", job_id)
+            return False
+        finally:
+            cursor.close()
+
+
+def get_active_applications(statuses: tuple, limit: int = 8, offset: int = 0) -> list:
+    """Applications still in play, newest first. One dict per row."""
+    placeholders = ", ".join(["%s"] * len(statuses))
+    with get_connection() as conn:
+        cursor = conn.cursor(buffered=True)
+        try:
+            cursor.execute(
+                f"SELECT {_APPLICATION_COLUMNS} {_APPLICATION_FROM} "
+                f"WHERE a.status IN ({placeholders}) "
+                "ORDER BY a.applied_on DESC, j.id DESC LIMIT %s OFFSET %s",
+                tuple(statuses) + (limit, offset),
+            )
+            rows = cursor.fetchall()
+        finally:
+            cursor.close()
+    return [_application_row_to_dict(r) for r in rows]
+
+
+def count_active_applications(statuses: tuple) -> int:
+    """Total rows get_active_applications would page through."""
+    placeholders = ", ".join(["%s"] * len(statuses))
+    with get_connection() as conn:
+        cursor = conn.cursor(buffered=True)
+        try:
+            cursor.execute(
+                f"SELECT COUNT(*) FROM application_status WHERE status IN ({placeholders})",
+                tuple(statuses),
+            )
+            row = cursor.fetchone()
+            return row[0] if row else 0
+        finally:
+            cursor.close()
+
+
+def get_due_applications(statuses: tuple, stale_after_days: dict,
+                         renotify_after_hours: Optional[int] = None) -> list:
+    """
+    Applications that want attention: a follow-up date that has arrived, or a
+    status that has sat untouched past its own patience window.
+
+    The per-status window is inlined as a CASE built from stale_after_days so
+    common.applications stays the only place those numbers are written down.
+    A status missing from the map never goes stale on age alone.
+
+    renotify_after_hours suppresses rows nudged again too recently. The
+    reminder loop passes it; /today does not, because asking to see what is
+    outstanding should show all of it regardless of what was already sent.
+    """
+    if not statuses:
+        return []
+    placeholders = ", ".join(["%s"] * len(statuses))
+    case_sql = "CASE a.status " + " ".join(["WHEN %s THEN %s"] * len(stale_after_days)) + " ELSE 99999 END"
+    case_params = tuple(v for status, days in stale_after_days.items() for v in (status, days))
+
+    quiet_sql = ""
+    quiet_params: tuple = ()
+    if renotify_after_hours is not None:
+        quiet_sql = ("AND (a.last_notified_at IS NULL "
+                     "OR a.last_notified_at < (NOW() - INTERVAL %s HOUR)) ")
+        quiet_params = (renotify_after_hours,)
+
+    with get_connection() as conn:
+        cursor = conn.cursor(buffered=True)
+        try:
+            cursor.execute(
+                f"SELECT {_APPLICATION_COLUMNS} {_APPLICATION_FROM} "
+                f"WHERE a.status IN ({placeholders}) {quiet_sql}AND ("
+                "  (a.next_important_date IS NOT NULL AND a.next_important_date <= CURDATE())"
+                f"  OR DATEDIFF(NOW(), a.updated_at) >= {case_sql}"
+                ") ORDER BY a.next_important_date IS NULL, a.next_important_date, a.updated_at",
+                tuple(statuses) + quiet_params + case_params,
+            )
+            rows = cursor.fetchall()
+        finally:
+            cursor.close()
+    return [_application_row_to_dict(r) for r in rows]
+
+
+def mark_applications_notified(job_ids: list) -> int:
+    """
+    Record that the reminder loop has just nudged about these applications.
+
+    updated_at is assigned to itself on purpose. It carries ON UPDATE
+    CURRENT_TIMESTAMP, so touching the row any other way would reset the
+    staleness clock this very query is meant to respect — a quiet application
+    would be nudged once and then look freshly active forever. An explicit
+    assignment suppresses the auto-update.
+    """
+    if not job_ids:
+        return 0
+    placeholders = ", ".join(["%s"] * len(job_ids))
+    with get_connection() as conn:
+        cursor = conn.cursor(buffered=True)
+        try:
+            cursor.execute(
+                "UPDATE application_status SET last_notified_at = NOW(), updated_at = updated_at "
+                f"WHERE job_id IN ({placeholders})",
+                tuple(job_ids),
+            )
+            return cursor.rowcount
+        except Exception:
+            conn.rollback()
+            logger.exception("Failed to mark %d application(s) as notified", len(job_ids))
+            return 0
+        finally:
+            cursor.close()
+
+
+def get_status_counts() -> dict:
+    """status -> count across every application row."""
+    with get_connection() as conn:
+        cursor = conn.cursor(buffered=True)
+        try:
+            cursor.execute("SELECT status, COUNT(*) FROM application_status GROUP BY status")
+            rows = cursor.fetchall()
+        finally:
+            cursor.close()
+    return {r[0]: r[1] for r in rows}

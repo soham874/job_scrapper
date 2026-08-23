@@ -87,10 +87,16 @@ def send_document(file_path: str, caption: str = "",
     return None
 
 
-def edit_message(message_id: int, text: str) -> bool:
+def edit_message(message_id: int, text: str,
+                 reply_markup: Optional[dict] = None) -> bool:
     """
-    Edit an existing Telegram message (remove buttons, update text).
+    Edit an existing Telegram message (update text, replace or remove buttons).
     Returns True on success, False on failure.
+
+    Omitting reply_markup clears the message's inline keyboard — that is
+    Telegram's behaviour for editMessageText, not something added here, and it
+    is what the Apply flow relies on to retire its button. Pass a keyboard to
+    swap one screen of the menu for another in place.
     """
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText"
     payload = {
@@ -100,6 +106,8 @@ def edit_message(message_id: int, text: str) -> bool:
         "parse_mode": "HTML",
         "disable_web_page_preview": True,
     }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
     try:
         resp = requests.post(url, json=payload, timeout=15)
         if resp.ok:
@@ -112,15 +120,59 @@ def edit_message(message_id: int, text: str) -> bool:
         return False
 
 
-def answer_callback_query(callback_query_id: str, text: str = "") -> bool:
-    """Answer a callback query to dismiss the loading indicator on the button."""
+def answer_callback_query(callback_query_id: str, text: str = "",
+                          show_alert: bool = False) -> bool:
+    """Answer a callback query to dismiss the loading indicator on the button.
+
+    show_alert swaps the transient toast for a dialog the user has to dismiss —
+    worth it for failures, too heavy for the ordinary confirmations.
+    """
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
     payload = {"callback_query_id": callback_query_id}
     if text:
         payload["text"] = text
+    if show_alert:
+        payload["show_alert"] = True
     try:
         resp = requests.post(url, json=payload, timeout=15)
         return resp.ok
     except Exception:
         logger.exception("Failed to answer callback query")
+        return False
+
+
+def get_me() -> Optional[dict]:
+    """Return the bot's own account record, or None if the call fails.
+
+    Used at startup to learn the bot's username, which is what dashboard deep
+    links are built from. Fetched rather than configured so there is no second
+    place for the bot's identity to drift out of sync with its token.
+    """
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getMe"
+    try:
+        resp = requests.get(url, timeout=15)
+        if resp.ok:
+            return resp.json().get("result")
+        logger.error("Telegram getMe error %d: %s", resp.status_code, resp.text)
+        return None
+    except Exception:
+        logger.exception("Failed to call getMe")
+        return None
+
+
+def set_my_commands(commands: list) -> bool:
+    """Publish the bot's command list so it appears in Telegram's '/' menu.
+
+    commands is a list of {"command": ..., "description": ...} dicts.
+    """
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setMyCommands"
+    try:
+        resp = requests.post(url, json={"commands": commands}, timeout=15)
+        if resp.ok:
+            logger.info("Registered %d bot command(s)", len(commands))
+            return True
+        logger.error("Telegram setMyCommands error %d: %s", resp.status_code, resp.text)
+        return False
+    except Exception:
+        logger.exception("Failed to set bot commands")
         return False

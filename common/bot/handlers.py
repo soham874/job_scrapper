@@ -68,6 +68,24 @@ def handle_apply(callback_id: str, message_id: int, job_id: int) -> dict:
         status="applied",
     )
 
+    deliver_resume_bundle(job, message_id)
+
+    logger.info("Job %d marked as applied", job_id)
+    return {"ok": True}
+
+
+def deliver_resume_bundle(job: dict, reply_to_message_id: int) -> None:
+    """
+    Generate the tailored resume for a job and send it with the referral text.
+
+    Shared with the tracker's Resume button, which re-runs this for a job the
+    user applied to earlier — the two paths must stay identical, because the
+    thing being produced is the same artifact.
+
+    `job` needs company, title, location, ats_job_id and an `id` key.
+    """
+    job_id = job.get("id")
+
     # Read the stored analysis here, on the request thread, so resume
     # generation needs no DB access of its own.
     analysis = get_job_analysis(job_id) or {}
@@ -78,7 +96,7 @@ def handle_apply(callback_id: str, message_id: int, job_id: int) -> dict:
     try:
         keywords = json.loads(analysis.get("positive_matches") or "[]")
     except (TypeError, ValueError):
-        logger.warning("Could not parse positive_matches for job %d", job_id)
+        logger.warning("Could not parse positive_matches for job %s", job_id)
         keywords = []
 
     # The referral message is sent as the resume's caption so the user can
@@ -88,13 +106,10 @@ def handle_apply(callback_id: str, message_id: int, job_id: int) -> dict:
     started = dispatch_async(
         job,
         description=analysis.get("job_description") or "",
-        reply_to_message_id=message_id,
+        reply_to_message_id=reply_to_message_id,
         keywords=keywords,
         referral_text=referral_text,
     )
     if started is None:
         # Resume generation is off — nothing to attach it to.
-        send_referral_text(referral_text, reply_to_message_id=message_id)
-
-    logger.info("Job %d marked as applied", job_id)
-    return {"ok": True}
+        send_referral_text(referral_text, reply_to_message_id=reply_to_message_id)
