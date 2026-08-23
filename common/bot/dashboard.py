@@ -171,6 +171,12 @@ _PAGE = """<!doctype html>
      one thing worth tapping. Stack each application into its own card instead. */
   @media (max-width: 900px) {{
     body {{ padding:20px 12px 48px; }}
+    /* Eight status tiles at desktop size fill a phone screen before a single
+       application is visible. Four to a row keeps the summary to two lines. */
+    .stats {{ gap:8px; margin:14px 0 16px; }}
+    .stat {{ min-width:0; flex:1 1 calc(25% - 6px); padding:8px 10px; }}
+    .stat .n {{ font-size:17px; }}
+    .stat .k {{ font-size:10px; }}
     .wrap {{ border:none; background:none; box-shadow:none; overflow:visible; }}
     table, tbody, tr, td {{ display:block; width:100%; }}
     thead {{ display:none; }}
