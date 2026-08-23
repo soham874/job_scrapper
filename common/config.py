@@ -29,3 +29,19 @@ SWEEP_AGE_HOURS = int(os.getenv("SWEEP_AGE_HOURS", "24"))
 # How often the sweeper wakes up. Finer than the window, so a job is rejected
 # within roughly this long of crossing it rather than up to a full window late.
 SWEEP_INTERVAL_SECONDS = int(os.getenv("SWEEP_INTERVAL_SECONDS", "21600"))  # 6 hours
+
+# --- Follow-up reminders ---------------------------------------------------
+# The other half of the tracker: the sweeper decides jobs the user ignored,
+# this decides applications the user is sitting on. An application is nudged
+# when its follow-up date arrives, or when its status has not moved for longer
+# than common.applications.STALE_AFTER_DAYS allows.
+REMINDER_INTERVAL_SECONDS = int(os.getenv("REMINDER_INTERVAL_SECONDS", "21600"))  # 6 hours
+
+# Minimum gap between two nudges about the same application. Longer than the
+# loop interval on purpose — the loop waking up is not a reason to nag again,
+# and a row stays due until it is acted on.
+REMINDER_RENOTIFY_HOURS = int(os.getenv("REMINDER_RENOTIFY_HOURS", "24"))
+
+# Cap on nudges per pass. The first run after this ships could otherwise match
+# every application at once and arrive as a wall of messages.
+REMINDER_MAX_PER_RUN = int(os.getenv("REMINDER_MAX_PER_RUN", "10"))
