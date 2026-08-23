@@ -17,4 +17,4 @@ python3 "$PROJECT_ROOT/run_scripts/run_migrations.py"
 echo "[run_bot] Migrations complete."
 
 echo "[run_bot] Starting Telegram bot webhook on port 5000..."
-python3 -m uvicorn common.bot:app --host 0.0.0.0 --port 5000
+python3 -m uvicorn common.bot.app:app --host 0.0.0.0 --port 5000
