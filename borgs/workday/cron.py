@@ -5,11 +5,11 @@ from urllib.parse import urlparse
 
 from common.analyzer import analyze_description
 from common.companies.sync import sync_companies_if_stale
-from common.config import CRON_INTERVAL_SECONDS
 from common.constants import SEARCH_TEXT, DESC_SCORE_THRESHOLD
 from common.db.repository import load_companies_by_ats, insert_job, insert_job_analysis
 from common.logger import get_logger
 from common.notifications.notifier import notify_new_jobs
+from common.scheduling import stagger_offset_seconds, wait_for_next_run
 from borgs.workday.scraper import WorkdayScraper
 
 logger = get_logger("workday")
@@ -108,20 +108,23 @@ def run_once():
 
 
 def _cron_loop():
-    """Blocking loop that runs run_once every CRON_INTERVAL_SECONDS."""
+    """Blocking loop that runs run_once on this borg's staggered slot."""
+    # Waits before the first run too: starting immediately would put every
+    # borg back on the same slot for one cycle, which is what the stagger is
+    # there to avoid. Use POST /trigger for an on-demand run.
+    wait_for_next_run(BORG_NAME, logger)
     while True:
         try:
             run_once()
         except Exception:
             logger.exception("Unhandled error in workday cron loop")
 
-        logger.info("Sleeping %d seconds until next run...", CRON_INTERVAL_SECONDS)
-        threading.Event().wait(CRON_INTERVAL_SECONDS)
+        wait_for_next_run(BORG_NAME, logger)
 
 
 def start_cron():
     """Start the cron loop in a daemon thread."""
     t = threading.Thread(target=_cron_loop, daemon=True, name="workday-cron")
     t.start()
-    logger.info("Workday cron thread started (interval=%ds)", CRON_INTERVAL_SECONDS)
+    logger.info("Workday cron thread started (slot=+%.0fs)", stagger_offset_seconds(BORG_NAME))
     return t
