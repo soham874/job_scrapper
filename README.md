@@ -194,6 +194,13 @@ the next path to be tried.
 `%d %b %Y`. A bare number is a plausible reading of both epoch formats, which is why it
 has to be stated.
 
+Use `"none"` for a board that publishes no date at all — Juspay's does not. The 24h gate
+is then skipped, every job reaches the title filter on every run, and the unique
+`(company_id, ats_job_id)` in `insert_job` is what makes each one notify exactly once, the
+first time it is seen. That is still the signal worth having, but **the first run after
+enabling such a company reports its whole back catalogue**, not just today's postings — so
+it has to be asked for explicitly, and `fields.posted` is then not required.
+
 **`location_filter`** is `"india"` (the shared keyword list, the default), `"any"`, or an
 explicit list like `["netherlands", "amsterdam"]`.
 

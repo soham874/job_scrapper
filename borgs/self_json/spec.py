@@ -27,9 +27,19 @@ class SpecError(Exception):
 
 
 # Date encodings we accept. Anything starting with '%' is handed to strptime.
-_NAMED_FORMATS = {"iso8601", "epoch_seconds", "epoch_millis", "relative_text"}
+#
+# "none" is for boards that publish no date at all — Juspay's is one. There the
+# 24h gate has nothing to filter on, so every job reaches the title filter on
+# every run and the (company_id, ats_job_id) dedupe in insert_job is what makes
+# each one notify exactly once, the first time it is seen. That is still the
+# signal worth having, but it must be asked for explicitly: turning it on by
+# accident would mean a board's entire back catalogue arrives as new.
+_NAMED_FORMATS = {"iso8601", "epoch_seconds", "epoch_millis", "relative_text", "none"}
 
 _REQUIRED_FIELDS = ("job_id", "title", "location", "posted")
+
+# With posted_format "none" there is no date to map.
+_REQUIRED_FIELDS_UNDATED = tuple(f for f in _REQUIRED_FIELDS if f != "posted")
 
 _PAGINATION_TYPES = {"none", "offset", "page"}
 _PAGINATION_TARGETS = {"json", "query"}
@@ -345,21 +355,24 @@ def parse_spec(text: str) -> Spec:
     if not isinstance(jobs_path, str):
         raise SpecError("'jobs_path' must be a string")
 
-    fields = raw.get("fields")
-    if not isinstance(fields, dict):
-        raise SpecError("Job Spec is missing required key 'fields'")
-    for name in _REQUIRED_FIELDS:
-        if name not in fields:
-            raise SpecError(f"'fields' is missing required mapping '{name}'")
-    for name, value in fields.items():
-        _check_path_value(value, f"fields.{name}")
-
     posted_format = _require(raw, "posted_format", "Job Spec")
     if posted_format not in _NAMED_FORMATS and not posted_format.startswith("%"):
         raise SpecError(
             f"posted_format must be one of {sorted(_NAMED_FORMATS)} or a strptime "
             f"format starting with '%', got {posted_format!r}"
         )
+
+    fields = raw.get("fields")
+    if not isinstance(fields, dict):
+        raise SpecError("Job Spec is missing required key 'fields'")
+    required = (
+        _REQUIRED_FIELDS_UNDATED if posted_format == "none" else _REQUIRED_FIELDS
+    )
+    for name in required:
+        if name not in fields:
+            raise SpecError(f"'fields' is missing required mapping '{name}'")
+    for name, value in fields.items():
+        _check_path_value(value, f"fields.{name}")
 
     detail = _parse_detail(raw.get("detail"))
 
@@ -407,12 +420,19 @@ def parse_spec(text: str) -> Spec:
     else:
         raise SpecError("location_filter must be 'india', 'any', or a list of keywords")
 
+    pagination = _parse_pagination(raw.get("pagination"))
+    if posted_format == "none" and pagination.sorted_by_posted_desc:
+        raise SpecError(
+            "pagination.sorted_by_posted_desc needs dates to compare, but "
+            "posted_format is 'none'"
+        )
+
     return Spec(
         jobs_path=jobs_path,
         fields=fields,
         posted_format=posted_format,
         link_template=link_template,
         location_filter=location_filter,
-        pagination=_parse_pagination(raw.get("pagination")),
+        pagination=pagination,
         detail=detail,
     )

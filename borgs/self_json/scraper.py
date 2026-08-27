@@ -313,24 +313,36 @@ class SelfJsonScraper:
         self.raw_count = len(jobs)
         logger.debug("%s | total jobs from API: %d", self.company_name, self.raw_count)
 
-        posted_path = self.spec.fields["posted"]
-        recent = []
-        undated = 0
-        for job in jobs:
-            posted = parse_posted(
-                resolve_scalar(job, posted_path), self.spec.posted_format
-            )
-            if posted is None:
-                undated += 1
-                continue
-            if posted >= cutoff:
-                recent.append(job)
-        if undated:
+        posted_path = self.spec.fields.get("posted")
+        if self.spec.posted_format == "none":
+            # No dates on this board, so there is no recency to filter on. Every
+            # job goes through, and insert_job's unique (company_id, ats_job_id)
+            # is what stops a job being announced twice — the first run after
+            # enabling the company will therefore report its whole back catalogue.
+            recent = jobs
             logger.info(
-                "%s | %d job(s) dropped — posted date at %r could not be read as %s",
-                self.company_name, undated, posted_path, self.spec.posted_format,
+                "%s | board publishes no posting dates — passing all %d jobs to the "
+                "title filter; dedupe decides what is new",
+                self.company_name, len(jobs),
             )
-        logger.debug("%s | after 24h filter: %d", self.company_name, len(recent))
+        else:
+            recent = []
+            undated = 0
+            for job in jobs:
+                posted = parse_posted(
+                    resolve_scalar(job, posted_path), self.spec.posted_format
+                )
+                if posted is None:
+                    undated += 1
+                    continue
+                if posted >= cutoff:
+                    recent.append(job)
+            if undated:
+                logger.info(
+                    "%s | %d job(s) dropped — posted date at %r could not be read as %s",
+                    self.company_name, undated, posted_path, self.spec.posted_format,
+                )
+            logger.debug("%s | after 24h filter: %d", self.company_name, len(recent))
 
         titled = [
             job for job in recent
@@ -369,7 +381,9 @@ class SelfJsonScraper:
                 "title": values.get("title", ""),
                 "job_id": job_id,
                 "location": values.get("location") or "Unknown",
-                "posted": resolve_scalar(job, posted_path) or "Unknown",
+                "posted": (
+                    resolve_scalar(job, posted_path) if posted_path else None
+                ) or "Unknown",
                 "description": values.get("description", ""),
                 "application_link": application_link,
             })

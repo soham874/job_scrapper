@@ -339,17 +339,22 @@ def dry_run(curl_text, spec_text, company_name):
         print("\n  Zero jobs before any filter — the curl is probably stale.")
         return 1
 
-    dated, undated = [], 0
-    for job in jobs:
-        posted = parse_posted(resolve_scalar(job, spec.fields["posted"]), spec.posted_format)
-        if posted is None:
-            undated += 1
-        else:
-            dated.append((job, posted))
-    print(f"  posting date readable: {len(dated)}  ({undated} unreadable)")
-
-    recent = [(j, d) for j, d in dated if d >= cutoff]
-    print(f"  posted in last 24h   : {len(recent)}")
+    if spec.posted_format == "none":
+        dated = [(job, None) for job in jobs]
+        print("  posting dates        : none published — the 24h gate is skipped and")
+        print("                         dedupe decides what is new. The first real run")
+        print("                         will report every job below, not just today's.")
+    else:
+        dated, undated = [], 0
+        for job in jobs:
+            posted = parse_posted(resolve_scalar(job, spec.fields["posted"]), spec.posted_format)
+            if posted is None:
+                undated += 1
+            else:
+                dated.append((job, posted))
+        print(f"  posting date readable: {len(dated)}  ({undated} unreadable)")
+        recent = [(j, d) for j, d in dated if d >= cutoff]
+        print(f"  posted in last 24h   : {len(recent)}")
 
     titled = [(j, d) for j, d in dated if title_matches(resolve_field(j, spec.fields["title"], " "))]
     print(f"  title matches (all)  : {len(titled)}")
@@ -375,9 +380,10 @@ def dry_run(curl_text, spec_text, company_name):
                 else values.get("application_link", ""))
         verdict = "KEEP" if analysis["score"] >= DESC_SCORE_THRESHOLD else "drop"
         passing += verdict == "KEEP"
+        when = f"{posted:%Y-%m-%d}" if posted else "no date"
         print(f"\n  [{verdict}] score={analysis['score']:>3}  {values.get('title', '')[:60]}")
         print(f"        id={resolve_scalar(job, spec.fields['job_id'])}  "
-              f"posted={posted:%Y-%m-%d}  loc={values.get('location', '')[:40]}")
+              f"posted={when}  loc={values.get('location', '')[:40]}")
         print(f"        desc={len(values.get('description', ''))} chars  "
               f"keywords={', '.join(analysis['positive_matches'][:6])}")
         print(f"        {link}")
