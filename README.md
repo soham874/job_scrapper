@@ -91,9 +91,13 @@ Each borg runs an automatic scrape every **1 hour** in a background thread. Comp
 The other four borgs know one ATS each. This one knows nothing: it is handed a curl and a
 mapping, and every org that has a JSON jobs endpoint can be tracked without writing code.
 
-Set `ATS` to `self_json` and fill in two more columns.
+Set `ATS` to `self_json`, put the curl in `ATS Link`, and add one more column, `Job Spec`.
 
-### `Job API Curl`
+### `ATS Link` — the curl
+
+`ATS Link` holds whatever a borg needs to reach a board: a slug for `ashby`, a tenant URL
+for `workday`, a host for `oracle` (whose parser already accepts one still wrapped in a
+`curl --location '...'` snippet). For `self_json` it holds the whole curl.
 
 Open the careers site, find the request that returns the job list in devtools, right-click
 → **Copy as cURL**, and paste it in as-is. Do not tidy it up.
@@ -107,6 +111,9 @@ these endpoints fail *silently* when it doesn't:
   from the POST body, which is indistinguishable from "no jobs today".
 
 The only thing ever changed between requests is the one pagination field the spec names.
+
+Because a copied curl carries the full header set, these cells run past the 1024 bytes
+`ats_link` originally allowed — V017 widens the column to `TEXT` for that reason.
 
 **Prefer a broad curl.** Search the board with an empty query rather than a narrow one and
 let `TITLE_INCLUDE_KEYWORDS`/`TITLE_EXCLUDE_KEYWORDS` do the filtering — Apple's own
@@ -191,7 +198,8 @@ PYTHONPATH=. python3 run_scripts/new_self_json_source.py --curl-file acme.txt
 ```
 
 Executes the curl, finds the candidate job arrays, lists every path on a sample job with a
-preview of its value, and writes out a validated spec to paste into the sheet. It also
+preview of its value, and writes out a validated spec. The curl goes in `ATS Link` and the
+spec in `Job Spec`. It also
 opens the first generated apply link to check the template — no API here returns one, so
 that URL is always hand-written and a broken Apply button is otherwise invisible until
 someone taps it. This is the only place anything is auto-detected, and a human reads the
@@ -236,11 +244,10 @@ punctuation (`ATS Link`, `ats_link` and `Ats-Link` are all the same column).
 |----------------------|----------|------------------------------------------------------|
 | `Company Name`       | yes      | Unique key. Renaming a company creates a new row.     |
 | `ATS`                | yes      | `workday`, `greenhouse`, `oracle`, `ashby` or `self_json` — picks the borg. |
-| `ATS Link`           | yes      | Career-site URL the scraper hits.                     |
+| `ATS Link`           | yes      | Whatever the borg needs to reach the board — a career-site URL for most, the full curl for `self_json`. |
 | `Enable in tracker`  | yes      | `Yes` to track, `No` to stop. Blank counts as `No`.   |
 | `Base Country`       | no       | Stored on the company row.                            |
 | `Target Location`    | no       | Stored on the company row.                            |
-| `Job API Curl`       | self_json | The listing-endpoint curl, pasted verbatim. Only read when `ATS` is `self_json`. |
 | `Job Spec`           | self_json | JSON saying where the jobs are and what each field maps to. Only read when `ATS` is `self_json`. |
 
 For `ashby`, the `ATS Link` only has to identify the board. The board name on its own

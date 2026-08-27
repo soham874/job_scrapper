@@ -38,7 +38,7 @@ def _scrape_and_save(company: dict):
     new_jobs = []
 
     if not (company.get("curl") or "").strip():
-        return new_jobs, "no 'Job API Curl' in the sheet"
+        return new_jobs, "no curl in the sheet's 'ATS Link'"
     if not (company.get("spec") or "").strip():
         return new_jobs, "no 'Job Spec' in the sheet"
 

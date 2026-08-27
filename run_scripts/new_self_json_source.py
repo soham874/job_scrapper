@@ -298,7 +298,7 @@ def scaffold(curl_text):
             print(f"Apply link check inconclusive ({type(exc).__name__}) — open it by hand:")
             print(f"  {link}")
 
-    print("\nValid. Paste this into the sheet's 'Job Spec' column:\n")
+    print("\nValid. Paste the curl into 'ATS Link' and this into 'Job Spec':\n")
     print(rendered)
     return 0
 
