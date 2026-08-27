@@ -46,6 +46,10 @@ COLUMN_MAP = {
     # "Walmart Global Tech" vs "Walmart Global Tech India") — the cell may
     # hold a comma-separated list of ids to search across all of them.
     "linkedin_company_ids": "LinkedIn Company Id",
+    # How to read the response for a 'self_json' row. The request itself is
+    # the curl in ATS Link, the way every other borg's source lives there.
+    # Kept out of REQUIRED_COLUMNS so a sheet without the column still syncs.
+    "job_spec": "Job Spec",
 }
 
 # Without these four a row cannot be acted on at all.
@@ -125,7 +129,7 @@ def _parse_enabled(raw: str, company_name: str) -> bool:
 def fetch_companies() -> List[Dict]:
     """
     Return one dict per sheet row with keys: company_name, base_country,
-    target_location, ats, ats_link, enabled, linkedin_company_ids.
+    target_location, ats, ats_link, enabled, linkedin_company_ids, job_spec.
 
     linkedin_company_ids is optional — blank cells (or a missing column
     entirely) come back as None. The cell may hold a single id or a
@@ -177,6 +181,14 @@ def fetch_companies() -> List[Dict]:
                 name, line_no,
             )
 
+        job_spec = cell(row, "job_spec")
+        if enabled and ats == "self_json" and not job_spec:
+            logger.warning(
+                "%s (row %d) | ATS is 'self_json' but Job Spec is blank — the "
+                "self_json borg cannot read the response until it is filled in",
+                name, line_no,
+            )
+
         linkedin_ids = [
             part.strip() for part in cell(row, "linkedin_company_ids").split(",")
             if part.strip()
@@ -190,6 +202,7 @@ def fetch_companies() -> List[Dict]:
             "ats_link": ats_link,
             "enabled": enabled,
             "linkedin_company_ids": ",".join(linkedin_ids) or None,
+            "job_spec": job_spec or None,
         })
 
     logger.info(

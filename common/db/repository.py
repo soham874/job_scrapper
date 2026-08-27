@@ -350,15 +350,52 @@ def load_companies_by_ats(ats_name: str) -> list:
     return [{"id": r[0], "name": r[1], "url": r[2]} for r in rows]
 
 
+def load_self_json_companies() -> list:
+    """
+    Return enabled companies handled by the self_json borg.
+
+    ats_link carries the curl for these rows — the same column that holds a
+    board slug for ashby or a tenant URL for workday, holding whatever this
+    borg needs to reach the jobs.
+
+    Unlike load_companies_by_ats this deliberately does not filter out rows with
+    a blank curl or spec. The sheet is the source of truth for these, so a row
+    that is switched on but not filled in has to reach the borg and be reported
+    by name — dropping it here would make a misconfiguration look like a company
+    with no new jobs.
+
+    Each dict has keys: id, name, curl, spec.
+    """
+    with get_connection() as conn:
+        cursor = conn.cursor(buffered=True)
+        try:
+            cursor.execute(
+                "SELECT id, company_name, ats_link, job_spec "
+                "FROM company_info WHERE ats = 'self_json' AND enabled = 1"
+            )
+            rows = cursor.fetchall()
+        finally:
+            cursor.close()
+    return [
+        {"id": r[0], "name": r[1], "curl": r[2] or "", "spec": r[3] or ""}
+        for r in rows
+    ]
+
+
 def upsert_company(company_name: str, base_country: str, target_location: str,
                    ats: str, ats_link: str, enabled: bool,
-                   linkedin_company_ids: Optional[str] = None) -> str:
+                   linkedin_company_ids: Optional[str] = None,
+                   job_spec: Optional[str] = None) -> str:
     """
     Insert or update a company by name, stamping synced_at.
 
     linkedin_company_ids is an optional comma-separated string (a company can
     exist as multiple distinct entities on LinkedIn) — pass None to
     clear/leave it unset when the sheet has no value for a company.
+
+    job_spec only means anything for rows whose ats is 'self_json'. That borg's
+    request lives in ats_link like every other borg's, and job_spec says how to
+    read the response.
 
     Returns 'inserted', 'updated' or 'unchanged'. Raises on failure so the
     caller can abort the sync rather than half-applying the sheet.
@@ -369,8 +406,8 @@ def upsert_company(company_name: str, base_country: str, target_location: str,
             cursor.execute(
                 "INSERT INTO company_info "
                 "(company_name, base_country, target_location, ats, ats_link, enabled, "
-                "linkedin_company_ids, synced_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, NOW()) "
+                "linkedin_company_ids, job_spec, synced_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW()) "
                 "ON DUPLICATE KEY UPDATE "
                 "base_country = VALUES(base_country), "
                 "target_location = VALUES(target_location), "
@@ -378,9 +415,10 @@ def upsert_company(company_name: str, base_country: str, target_location: str,
                 "ats_link = VALUES(ats_link), "
                 "enabled = VALUES(enabled), "
                 "linkedin_company_ids = VALUES(linkedin_company_ids), "
+                "job_spec = VALUES(job_spec), "
                 "synced_at = NOW()",
                 (company_name, base_country, target_location, ats, ats_link,
-                 int(enabled), linkedin_company_ids),
+                 int(enabled), linkedin_company_ids, job_spec),
             )
             # MySQL reports 1 for a fresh insert, 2 when an existing row changed,
             # and 0 when the row already matched.

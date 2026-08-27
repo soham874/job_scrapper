@@ -59,6 +59,7 @@ def sync_companies() -> dict:
             ats_link=company["ats_link"],
             enabled=company["enabled"],
             linkedin_company_ids=company["linkedin_company_ids"],
+            job_spec=company["job_spec"],
         )
         counts[outcome] += 1
 
