@@ -8,24 +8,25 @@ A Python monorepo that scrapes job postings from **Workday**, **Greenhouse**, **
 job-scrapper/
 ├── common/              # Shared utilities (config, logging)
 │   ├── companies/       # Google Sheet fetch + company_info sync
-│   ├── config.py        # Shared constants (cron interval)
+│   ├── config.py        # Shared constants (cron interval, borg stagger slots)
+│   ├── scheduling.py    # Per-borg run slots inside the cron interval
 │   └── logger.py        # Per-borg file + console logging
 ├── borgs/
 │   ├── workday/          # Workday borg
 │   │   ├── scraper.py    # WorkdayScraper (from POC notebook)
-│   │   ├── cron.py       # Hourly cron loop + CSV writer
+│   │   ├── cron.py       # Staggered cron loop + CSV writer
 │   │   └── api.py        # FastAPI (health + trigger)
 │   ├── greenhouse/       # Greenhouse borg
 │   │   ├── scraper.py    # GreenhouseScraper (from POC notebook)
-│   │   ├── cron.py       # Hourly cron loop + CSV writer
+│   │   ├── cron.py       # Staggered cron loop + CSV writer
 │   │   └── api.py        # FastAPI (health + trigger)
 │   ├── oracle/           # Oracle Recruiting Cloud borg
 │   │   ├── scraper.py    # OracleScraper
-│   │   ├── cron.py       # Hourly cron loop
+│   │   ├── cron.py       # Staggered cron loop
 │   │   └── api.py        # FastAPI (health + trigger)
 │   └── ashby/            # Ashby borg
 │       ├── scraper.py    # AshbyScraper
-│       ├── cron.py       # Hourly cron loop
+│       ├── cron.py       # Staggered cron loop
 │       └── api.py        # FastAPI (health + trigger)
 ├── run_scripts/          # Bash launchers
 │   ├── run_workday.sh
@@ -84,7 +85,29 @@ Each borg exposes:
 
 ## Cron
 
-Each borg runs an automatic scrape every **1 hour** in a background thread. Companies are scraped **in parallel** (8 workers) for speed. Results are saved to `jobs/<borg>_<UTC timestamp>.csv`.
+Each borg runs an automatic scrape every **30 minutes** in a background thread. Companies are scraped **in parallel** (8 workers) for speed. Results are saved to `jobs/<borg>_<UTC timestamp>.csv`.
+
+### Staggering
+
+The borgs are separate processes, so on a shared interval they would all wake at
+once — five providers scraped simultaneously, then one burst of Telegram messages,
+then half an hour of silence. Instead each borg owns a slot spread evenly across
+`BORG_STAGGER_WINDOW_SECONDS` (30 minutes by default), in the order set by
+`BORG_ORDER` in `common/config.py`:
+
+| Borg         | Slot   |
+|--------------|--------|
+| `workday`    | +0 min |
+| `greenhouse` | +6 min |
+| `oracle`     | +12 min |
+| `ashby`      | +18 min |
+| `self_json`  | +24 min |
+
+Slots are anchored to wall-clock time, not to when the process started, so a slow
+run or a restart puts a borg back on its own slot instead of dragging the schedule
+with it. A borg therefore waits for its slot before its **first** run too — use
+`POST /trigger` if you want a run right now. Adding a borg to `BORG_ORDER` re-spaces
+every slot, which is fine: they only have to differ, not stay put.
 
 ## The `self_json` borg — scraping an org with no supported ATS
 

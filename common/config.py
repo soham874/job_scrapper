@@ -16,7 +16,19 @@ from dotenv import load_dotenv
 # their defaults and ignore .env.
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-CRON_INTERVAL_SECONDS = 1800  # 1 hour
+CRON_INTERVAL_SECONDS = 1800  # 30 minutes
+
+# --- Borg stagger ----------------------------------------------------------
+# The borgs run as separate processes with the same interval, so without an
+# offset they all wake together: four providers scraped at once and a single
+# burst of Telegram messages. Each borg instead takes a slot spread evenly
+# across the window below, in this order. Appending a new borg re-spaces the
+# existing slots, which is fine — the slots only have to differ, not stay put.
+BORG_ORDER = ["workday", "greenhouse", "oracle", "ashby", "self_json"]
+
+# Span the slots are spread over. Capped at CRON_INTERVAL_SECONDS by
+# common.scheduling, since a wider window would wrap borgs onto each other.
+BORG_STAGGER_WINDOW_SECONDS = int(os.getenv("BORG_STAGGER_WINDOW_SECONDS", "1800"))  # 30 minutes
 
 # --- Stale-job sweep -------------------------------------------------------
 # There is no Reject button. A job the user has not applied to within
