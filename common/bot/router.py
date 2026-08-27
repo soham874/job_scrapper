@@ -40,7 +40,8 @@ _HELP = (
     "/today — follow-ups due and applications gone quiet\n"
     "/stats — counts by status\n\n"
     "Tap an application to change its status, set a reminder, record a contact, "
-    "or re-cut the resume."
+    "or re-cut the resume.\n\n"
+    "LinkedIn profile URL - https://www.linkedin.com/in/soham-choudhury-bwn/\n\n"
 )
 
 

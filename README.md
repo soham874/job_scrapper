@@ -58,6 +58,7 @@ bash run_scripts/run_workday.sh      # port 5001
 bash run_scripts/run_greenhouse.sh   # port 5002
 bash run_scripts/run_oracle.sh       # port 5003
 bash run_scripts/run_ashby.sh        # port 5004
+bash run_scripts/run_self_json.sh       # port 5005
 ```
 
 ### All borgs together
@@ -79,10 +80,146 @@ Each borg exposes:
 - **Greenhouse**: `http://localhost:5002`
 - **Oracle**: `http://localhost:5003`
 - **Ashby**: `http://localhost:5004`
+- **Self JSON**: `http://localhost:5005`
 
 ## Cron
 
 Each borg runs an automatic scrape every **1 hour** in a background thread. Companies are scraped **in parallel** (8 workers) for speed. Results are saved to `jobs/<borg>_<UTC timestamp>.csv`.
+
+## The `self_json` borg — scraping an org with no supported ATS
+
+The other four borgs know one ATS each. This one knows nothing: it is handed a curl and a
+mapping, and every org that has a JSON jobs endpoint can be tracked without writing code.
+
+Set `ATS` to `self_json` and fill in two more columns.
+
+### `Job API Curl`
+
+Open the careers site, find the request that returns the job list in devtools, right-click
+→ **Copy as cURL**, and paste it in as-is. Do not tidy it up.
+
+That is not a style preference. The borg replays the request exactly as pasted because
+these endpoints fail *silently* when it doesn't:
+
+- `careers.klm.com` resets the connection outright when the `sec-ch-ua` / `sec-fetch-*`
+  headers are missing — no response at all, not a 403.
+- `jobs.apple.com` answers `200` with an empty result set when a single key is dropped
+  from the POST body, which is indistinguishable from "no jobs today".
+
+The only thing ever changed between requests is the one pagination field the spec names.
+
+**Prefer a broad curl.** Search the board with an empty query rather than a narrow one and
+let `TITLE_INCLUDE_KEYWORDS`/`TITLE_EXCLUDE_KEYWORDS` do the filtering — Apple's own
+relevance ranking returns RF fixture design and manufacturing roles for a query of
+"senior software engineer".
+
+### `Job Spec`
+
+```jsonc
+{
+  "jobs_path": "res.searchResults",          // where the job array lives
+  "fields": {
+    "job_id":      "positionId",             // the dedupe key; must be a single scalar
+    "title":       "postingTitle",
+    "location":    ["locations[].name", "locations[].countryName"],
+    "posted":      "postDateInGMT",
+    "description": "jobSummary",
+    "slug":        "transformedPostingTitle" // extra fields are allowed, for the URL
+  },
+  "posted_format": "iso8601",
+  "link_template": "https://jobs.apple.com/en-in/details/{job_id}/{slug}",
+  "location_filter": "india",
+  "pagination": { "type": "page", "in": "json", "page_field": "page",
+                  "start": 1, "max_pages": 10, "delay_seconds": 0.4 },
+  "detail": {                                 // optional second request per job
+    "url_template": "https://jobs.apple.com/api/v1/jobDetails/{job_id}",
+    "fields": { "description": ["res.description", "res.responsibilities",
+                                "res.minimumQualifications"] }
+  }
+}
+```
+
+Required: `jobs_path`, `posted_format`, `fields.{job_id,title,location,posted}`, a
+description source, and exactly one link source. Anything missing is rejected by name and
+the company is skipped — the borg never guesses, because a guess that goes wrong looks
+exactly like a company with no new jobs.
+
+**Path grammar** — no wildcards, no filters, no fallback chains:
+
+| Form | Meaning |
+|------|---------|
+| `a.b.c` | dict keys |
+| `a.0.b` | list index |
+| `a[].b` | map the rest of the path over a list |
+| `""` | the response root |
+| `["a", "b"]` | **concatenate** a and b, in order |
+
+Nested `[]` flattens: KLM stores descriptions as Portable Text blocks, so
+`description[].children[].text` is what turns them back into prose. A list of paths is a
+concatenation, *not* a fallback — a missing part contributes nothing rather than causing
+the next path to be tried.
+
+**`posted_format`** is declared, never sniffed: `iso8601`, `epoch_seconds`,
+`epoch_millis`, `relative_text` ("Posted 3 Days Ago"), or a strptime string like
+`%d %b %Y`. A bare number is a plausible reading of both epoch formats, which is why it
+has to be stated.
+
+**`location_filter`** is `"india"` (the shared keyword list, the default), `"any"`, or an
+explicit list like `["netherlands", "amsterdam"]`.
+
+**`pagination.type`** is `none`, `offset`, or `page`; `in` picks the JSON body or the query
+string. Paging stops on an empty page, a page shorter than the first, or `max_pages`.
+Don't reach for a total-count field as a stop condition — Apple reports
+`totalRecords: 80` on every real page and `0` on the overrun page.
+
+Some boards ignore paging entirely and return their whole result set every time — the
+Emirates Group board does. Use `"type": "none"` for those. If you get it wrong the borg
+notices that a page repeated the previous one, stops, and logs which field is being
+ignored, rather than fetching the same jobs `max_pages` times.
+
+**`detail`** is an optional GET per surviving job, reusing the list request's headers. It
+is usually needed: a list endpoint often carries only a marketing blurb. Apple's
+`jobSummary` scores **0–3** against a threshold of 20, while its detail endpoint's
+`description` + `responsibilities` + `minimumQualifications` score **23–45**. If a spec
+declares no description source at all, it is rejected outright — every job would score 0
+and be discarded without a single error in the log.
+
+### Adding a source
+
+```bash
+PYTHONPATH=. python3 run_scripts/new_self_json_source.py --curl-file acme.txt
+```
+
+Executes the curl, finds the candidate job arrays, lists every path on a sample job with a
+preview of its value, and writes out a validated spec to paste into the sheet. It also
+opens the first generated apply link to check the template — no API here returns one, so
+that URL is always hand-written and a broken Apply button is otherwise invisible until
+someone taps it. This is the only place anything is auto-detected, and a human reads the
+result before it reaches the sheet.
+
+Then dry-run it before switching the row on:
+
+```bash
+PYTHONPATH=. python3 run_scripts/new_self_json_source.py --curl-file acme.txt --spec-file acme.json --dry-run
+```
+
+This prints the whole funnel — returned by API, date readable, posted in last 24h, title
+match, location match, then the analyzer score per job — and writes nothing to the
+database or Telegram. It scores against the whole board rather than just the last 24
+hours, so a spec can be verified on a quiet day. Once the row is in the sheet,
+`--company "Acme"` reads the curl and spec straight from the database instead.
+
+### When a source breaks
+
+The sheet is the source of truth, so a typo in a path is the likeliest failure — and both
+APIs above fail with HTTP 200 while doing it. The borg therefore reports, over Telegram,
+any company that cannot be scraped: a missing curl or spec, a spec that fails validation,
+an endpoint that never answers, or a request that succeeds and returns **zero jobs before
+any filter**. That last one is the signature of a stale curl; pinned client-hint versions
+expire and request bodies gain required keys. The fix is to re-copy the curl from devtools
+into the sheet. Alerts fire only when the set of broken sources *changes*, so a
+permanently broken row does not nag every half hour.
+
 
 ## Tracked Companies (Google Sheet)
 
@@ -98,11 +235,13 @@ punctuation (`ATS Link`, `ats_link` and `Ats-Link` are all the same column).
 | Column               | Required | Purpose                                              |
 |----------------------|----------|------------------------------------------------------|
 | `Company Name`       | yes      | Unique key. Renaming a company creates a new row.     |
-| `ATS`                | yes      | `workday`, `greenhouse`, `oracle` or `ashby` — picks the borg. |
+| `ATS`                | yes      | `workday`, `greenhouse`, `oracle`, `ashby` or `self_json` — picks the borg. |
 | `ATS Link`           | yes      | Career-site URL the scraper hits.                     |
 | `Enable in tracker`  | yes      | `Yes` to track, `No` to stop. Blank counts as `No`.   |
 | `Base Country`       | no       | Stored on the company row.                            |
 | `Target Location`    | no       | Stored on the company row.                            |
+| `Job API Curl`       | self_json | The listing-endpoint curl, pasted verbatim. Only read when `ATS` is `self_json`. |
+| `Job Spec`           | self_json | JSON saying where the jobs are and what each field maps to. Only read when `ATS` is `self_json`. |
 
 For `ashby`, the `ATS Link` only has to identify the board. The board name on its own
 (`confluent`), the public board URL (`https://jobs.ashbyhq.com/confluent`), a link to a

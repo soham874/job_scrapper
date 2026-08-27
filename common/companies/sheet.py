@@ -46,6 +46,11 @@ COLUMN_MAP = {
     # "Walmart Global Tech" vs "Walmart Global Tech India") — the cell may
     # hold a comma-separated list of ids to search across all of them.
     "linkedin_company_ids": "LinkedIn Company Id",
+    # The self_json borg's entire configuration. Only meaningful when ATS is
+    # 'self_json'; every other row leaves both blank. Kept out of
+    # REQUIRED_COLUMNS so a sheet without these columns still syncs.
+    "job_api_curl": "Job API Curl",
+    "job_spec": "Job Spec",
 }
 
 # Without these four a row cannot be acted on at all.
@@ -125,7 +130,8 @@ def _parse_enabled(raw: str, company_name: str) -> bool:
 def fetch_companies() -> List[Dict]:
     """
     Return one dict per sheet row with keys: company_name, base_country,
-    target_location, ats, ats_link, enabled, linkedin_company_ids.
+    target_location, ats, ats_link, enabled, linkedin_company_ids,
+    job_api_curl, job_spec.
 
     linkedin_company_ids is optional — blank cells (or a missing column
     entirely) come back as None. The cell may hold a single id or a
@@ -177,6 +183,20 @@ def fetch_companies() -> List[Dict]:
                 name, line_no,
             )
 
+        job_api_curl = cell(row, "job_api_curl")
+        job_spec = cell(row, "job_spec")
+        if enabled and ats == "self_json" and not (job_api_curl and job_spec):
+            blank = " and ".join(
+                label for label, value in (
+                    ("Job API Curl", job_api_curl), ("Job Spec", job_spec)
+                ) if not value
+            )
+            logger.warning(
+                "%s (row %d) | ATS is 'self_json' but %s is blank — the self_json borg "
+                "cannot scrape it until filled in",
+                name, line_no, blank,
+            )
+
         linkedin_ids = [
             part.strip() for part in cell(row, "linkedin_company_ids").split(",")
             if part.strip()
@@ -190,6 +210,8 @@ def fetch_companies() -> List[Dict]:
             "ats_link": ats_link,
             "enabled": enabled,
             "linkedin_company_ids": ",".join(linkedin_ids) or None,
+            "job_api_curl": job_api_curl or None,
+            "job_spec": job_spec or None,
         })
 
     logger.info(
