@@ -52,6 +52,13 @@ def _fmt_date(value) -> str:
     return value.strftime("%d %b %Y") if hasattr(value, "strftime") else str(value)
 
 
+def _ats_job_id(app: dict) -> str:
+    ats_job_id = app.get("ats_job_id")
+    if ats_job_id in (None, ""):
+        return str(app.get("job_id") or "—")
+    return str(ats_job_id)
+
+
 def _row(app: dict) -> str:
     """One application.
 
@@ -76,6 +83,7 @@ def _row(app: dict) -> str:
     return f"""<tr>
       <td data-l="Status" class="nw"><span class="pill">{_e(STATUS_EMOJI.get(status, ''))} {_e(STATUSES.get(status, status))}</span></td>
       <td data-l="Company" class="strong">{company_cell}</td>
+      <td data-l="Job ID" class="nw">{_e(_ats_job_id(app))}</td>
       <td data-l="Role">{_e(app.get('title'))}</td>
       <td data-l="Location" class="muted">{_e(app.get('location'))}</td>
       <td data-l="Applied" class="nw">{_fmt_date(app.get('applied_on'))}</td>
@@ -85,6 +93,51 @@ def _row(app: dict) -> str:
       <td data-l="Idle" class="num nw">{idle_cell}</td>
       <td data-l="Link" class="actions nw">{posting_cell}</td>
     </tr>"""
+
+
+def _mobile_card(app: dict) -> str:
+    """Compact mobile card summary that expands to reveal all fields."""
+    link = build_deep_link(app["job_id"])
+    company = _e(app.get("company"))
+    company_cell = (
+        f'<a class="tg" href="{_e(link)}">{company}</a>' if link else company
+    )
+    status = app.get("status") or ""
+    posting = app.get("application_link")
+    posting_cell = (
+        f'<a href="{_e(posting)}" target="_blank" rel="noopener">Posting ↗</a>'
+        if posting else "—"
+    )
+    idle = app.get("days_idle")
+    idle_cell = f"{int(idle)}d" if idle is not None else "—"
+    details = [
+        ("Role", _e(app.get("title")) or "—"),
+        ("Location", _e(app.get("location")) or "—"),
+        ("Job ID", _e(_ats_job_id(app))),
+        ("Applied", _fmt_date(app.get("applied_on"))),
+        ("Next", _fmt_date(app.get("next_important_date"))),
+        ("Task", _e(app.get("next_important_task")) or "—"),
+        ("Contact", _e(app.get("poc")) or "—"),
+        ("Idle", idle_cell),
+        ("Posting", posting_cell),
+    ]
+    details_html = "".join(
+        f'<div class="detail-row"><span>{label}</span><span>{value}</span></div>'
+        for label, value in details
+    )
+    return f"""<article class="mobile-card" tabindex="0" role="button" aria-expanded="false">
+      <div class="mobile-card-summary">
+        <div class="mobile-topline">
+          <div class="mobile-company">{company_cell}</div>
+          <span class="pill">{_e(STATUS_EMOJI.get(status, ''))} {_e(STATUSES.get(status, status))}</span>
+        </div>
+        <div class="mobile-meta">
+          <span><strong>Job ID</strong> {_e(_ats_job_id(app))}</span>
+          <span>{_fmt_date(app.get('applied_on'))}</span>
+        </div>
+      </div>
+      <div class="mobile-card-details">{details_html}</div>
+    </article>"""
 
 
 def _summary(counts: dict) -> str:
@@ -129,6 +182,8 @@ _PAGE = """<!doctype html>
   .stat .k {{ display:block; font-size:11px; color:var(--muted); text-transform:lowercase; }}
   .wrap {{ max-width:1200px; margin:0 auto; overflow-x:auto;
     background:var(--card); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); }}
+  .desktop-table {{ display:block; }}
+  .mobile-stack {{ display:none; }}
   table {{ border-collapse:collapse; width:100%; font-size:13.5px; }}
   /* Text columns wrap. Real company names and role titles run long — held on
      one line they pushed the table past 2000px and buried the last columns
@@ -168,27 +223,31 @@ _PAGE = """<!doctype html>
   }}
 
   /* Phone: a horizontally scrolling table hides the company link, which is the
-     one thing worth tapping. Stack each application into its own card instead. */
+     one thing worth tapping. Stack each application into its own compact card
+     and expand it on demand for the full details. */
   @media (max-width: 900px) {{
     body {{ padding:20px 12px 48px; }}
-    /* Eight status tiles at desktop size fill a phone screen before a single
-       application is visible. Four to a row keeps the summary to two lines. */
     .stats {{ gap:8px; margin:14px 0 16px; }}
     .stat {{ min-width:0; flex:1 1 calc(25% - 6px); padding:8px 10px; }}
     .stat .n {{ font-size:17px; }}
     .stat .k {{ font-size:10px; }}
     .wrap {{ border:none; background:none; box-shadow:none; overflow:visible; }}
-    table, tbody, tr, td {{ display:block; width:100%; }}
-    thead {{ display:none; }}
-    tr {{ background:var(--card); border:1px solid var(--line); border-radius:12px;
-          margin-bottom:10px; padding:6px 4px; box-shadow:var(--shadow); }}
-    td {{ border-bottom:none; display:flex; justify-content:space-between; gap:16px;
-          padding:5px 12px; white-space:normal; text-align:right; }}
-    td::before {{ content:attr(data-l); color:var(--muted); font-size:11px;
-                  text-transform:uppercase; letter-spacing:.05em; flex:0 0 auto;
-                  align-self:center; }}
-    td.strong {{ font-size:16px; }}
-    td.num {{ text-align:right; }}
+    .desktop-table {{ display:none; }}
+    .mobile-stack {{ display:block; }}
+    .mobile-card {{ background:var(--card); border:1px solid var(--line); border-radius:12px;
+                   box-shadow:var(--shadow); margin-bottom:10px; overflow:hidden; }}
+    .mobile-card-summary {{ padding:10px 12px; cursor:pointer; }}
+    .mobile-topline {{ display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }}
+    .mobile-company {{ font-size:16px; font-weight:600; line-height:1.3; flex:1 1 auto; }}
+    .mobile-meta {{ display:flex; justify-content:space-between; gap:8px; color:var(--muted);
+                   font-size:11px; margin-top:8px; }}
+    .mobile-card-details {{ display:none; border-top:1px solid var(--line); padding:8px 12px 10px; }}
+    .mobile-card.is-expanded .mobile-card-details {{ display:block; }}
+    .detail-row {{ display:flex; justify-content:space-between; align-items:flex-start; gap:12px;
+                  padding:6px 0; font-size:12px; border-top:1px solid var(--line); }}
+    .detail-row:first-child {{ border-top:none; }}
+    .detail-row span:first-child {{ color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }}
+    .detail-row span:last-child {{ text-align:right; overflow-wrap:anywhere; }}
   }}
 </style></head>
 <body>
@@ -196,12 +255,30 @@ _PAGE = """<!doctype html>
   <h1>Application tracker</h1>
   <div class="stats">{stats}</div>
 </header>
-<div class="wrap">{table}</div>
+<div class="wrap">
+  <div class="desktop-table">{table}</div>
+  <div class="mobile-stack">{mobile_cards}</div>
+</div>
 <footer>{note}</footer>
+<script>
+  document.querySelectorAll('.mobile-card').forEach((card) => {{
+    const toggle = () => {{
+      const expanded = card.classList.toggle('is-expanded');
+      card.setAttribute('aria-expanded', String(expanded));
+    }};
+    card.addEventListener('click', toggle);
+    card.addEventListener('keydown', (event) => {{
+      if (event.key === 'Enter' || event.key === ' ') {{
+        event.preventDefault();
+        toggle();
+      }}
+    }});
+  }});
+</script>
 </body></html>"""
 
 _HEAD = """<table><thead><tr>
-  <th class="nw">Status</th><th>Company</th><th>Role</th><th>Location</th>
+  <th class="nw">Status</th><th>Company</th><th>Job ID</th><th>Role</th><th>Location</th>
   <th class="nw">Applied</th><th class="nw">Next</th><th>Task</th><th>Contact</th>
   <th class="nw num">Idle</th><th class="nw"></th>
 </tr></thead><tbody>"""
@@ -218,8 +295,10 @@ def dashboard(t: Optional[str] = Query(default=None)):
 
     if apps:
         table = _HEAD + "".join(_row(a) for a in apps) + "</tbody></table>"
+        mobile_cards = "".join(_mobile_card(a) for a in apps)
     else:
         table = '<div class="empty">No applications yet. Apply to a job from Telegram and it will appear here.</div>'
+        mobile_cards = table
 
     note = (
         "Deep links are disabled — the bot username could not be resolved, so company names are plain text."
@@ -227,7 +306,14 @@ def dashboard(t: Optional[str] = Query(default=None)):
         else "Tap a company name to open that application in Telegram, where you can change its status, "
              "set a reminder, record a contact, or re-cut the resume."
     )
-    return HTMLResponse(_PAGE.format(stats=_summary(counts), table=table, note=html.escape(note)))
+    return HTMLResponse(
+        _PAGE.format(
+            stats=_summary(counts),
+            table=table,
+            mobile_cards=mobile_cards,
+            note=html.escape(note),
+        )
+    )
 
 
 @router.get("/dashboard/data")
