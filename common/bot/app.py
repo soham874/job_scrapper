@@ -22,6 +22,7 @@ from common.notifications.telegram import (
     send_message,
     set_my_commands,
 )
+from common.ghosting import start_ghoster
 from common.reminders import start_reminders
 from common.sweeper import start_sweeper
 
@@ -79,6 +80,9 @@ async def lifespan(app: FastAPI):
     # Same argument for reminders: the nudges are answered with the same
     # buttons this process serves.
     start_reminders()
+    # And when the nudges have run out of road, the daily ghost sweep closes
+    # the application so it stops being nudged and stops counting days.
+    start_ghoster()
     yield
 
 

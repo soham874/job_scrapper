@@ -9,6 +9,7 @@ from typing import Optional
 
 import mysql.connector
 
+from common.applications import TERMINAL_STATUSES
 from common.logger import get_logger
 from common.db.connection import get_connection
 
@@ -239,8 +240,13 @@ def insert_application_status(company_id: int, job_id: int,
         cursor = conn.cursor(buffered=True)
         try:
             cursor.execute(
-                "INSERT INTO application_status (company_id, job_id, applied_on, status) "
-                "VALUES (%s, %s, %s, %s)",
+                # updated_at is set here rather than left to the column default:
+                # applying is the first activity on this application, and it is
+                # what the idle clock has to count from. Rows written before
+                # V018 gave the column a default landed with it NULL, which
+                # read as "no clock" everywhere downstream.
+                "INSERT INTO application_status (company_id, job_id, applied_on, status, updated_at) "
+                "VALUES (%s, %s, %s, %s, NOW())",
                 (company_id, job_id, applied_on, status),
             )
             return True
@@ -502,11 +508,25 @@ def count_companies() -> int:
 # functions below are what the Telegram menu drives it with afterwards.
 # ---------------------------------------------------------------------------
 
+# Days since the row last moved — the idle clock the reminder loop, the
+# ghosting pass and the dashboard all read.
+#
+# It only runs while the application is still in play. A rejection or a ghost
+# is the end of the story, and a "quiet for 94 days" against one reads as an
+# open question rather than a closed one. The statuses are hard-coded
+# constants from common.applications, never user input, so inlining them is
+# safe — and a shared column list has nowhere to carry bind parameters.
+_TERMINAL_STATUS_SQL = ", ".join(f"'{status}'" for status in TERMINAL_STATUSES)
+_IDLE_DAYS_SQL = (
+    f"CASE WHEN a.status IN ({_TERMINAL_STATUS_SQL}) THEN NULL "
+    "ELSE DATEDIFF(NOW(), a.updated_at) END"
+)
+
 _APPLICATION_COLUMNS = (
     "j.id, c.company_name, j.title, j.location, j.application_link, j.ats_job_id, "
     "a.status, a.applied_on, a.next_important_date, a.next_important_task, a.poc, "
     "a.updated_at, c.linkedin_company_ids, j.company_id, "
-    "DATEDIFF(CURDATE(), a.applied_on), DATEDIFF(NOW(), a.updated_at)"
+    f"DATEDIFF(CURDATE(), a.applied_on), {_IDLE_DAYS_SQL}"
 )
 
 _APPLICATION_FROM = (
@@ -748,6 +768,75 @@ def mark_applications_notified(job_ids: list) -> int:
             conn.rollback()
             logger.exception("Failed to mark %d application(s) as notified", len(job_ids))
             return 0
+        finally:
+            cursor.close()
+
+
+def ghost_idle_applications(idle_days: int, statuses: tuple) -> list:
+    """
+    Move every application idle for idle_days or more to 'ghosted'.
+
+    Returns the rows that were ghosted, so the caller can report them. The
+    statuses passed in are the ones still in play — a rejection is a company
+    that answered, and re-ghosting a ghost would be a no-op with a misleading
+    log line.
+
+    Candidates are read first and then re-checked inside the UPDATE, so an
+    application the user touches between the two statements keeps whatever
+    they just set it to instead of being overwritten by the sweep.
+
+    updated_at is assigned to itself on purpose: it carries ON UPDATE
+    CURRENT_TIMESTAMP, and letting it move would rewrite the very silence this
+    pass is recording. Frozen, the row still says when the application last
+    actually moved — and reopening it later goes through _touch_application,
+    which starts the clock again from that moment.
+    """
+    if not statuses:
+        return []
+    status_slots = ", ".join(["%s"] * len(statuses))
+
+    with get_connection() as conn:
+        cursor = conn.cursor(buffered=True)
+        try:
+            cursor.execute(
+                f"SELECT {_APPLICATION_COLUMNS} {_APPLICATION_FROM} "
+                f"WHERE a.status IN ({status_slots}) "
+                "AND DATEDIFF(NOW(), a.updated_at) >= %s "
+                "ORDER BY a.updated_at",
+                tuple(statuses) + (idle_days,),
+            )
+            candidates = [_application_row_to_dict(r) for r in cursor.fetchall()]
+            if not candidates:
+                return []
+
+            job_ids = [c["job_id"] for c in candidates]
+            job_slots = ", ".join(["%s"] * len(job_ids))
+            cursor.execute(
+                "UPDATE application_status SET status = 'ghosted', updated_at = updated_at "
+                f"WHERE job_id IN ({job_slots}) AND status IN ({status_slots}) "
+                "AND DATEDIFF(NOW(), updated_at) >= %s",
+                tuple(job_ids) + tuple(statuses) + (idle_days,),
+            )
+            if cursor.rowcount == len(candidates):
+                return candidates
+
+            # A row moved between the SELECT and the UPDATE. The table is the
+            # authority on what actually changed, so ask it which of the
+            # candidates are ghosts now rather than reporting the ones that
+            # merely looked like it a moment ago.
+            logger.info("Ghost sweep matched %d application(s) but updated %d — "
+                        "the rest changed status mid-pass", len(candidates), cursor.rowcount)
+            cursor.execute(
+                f"SELECT job_id FROM application_status WHERE job_id IN ({job_slots}) "
+                "AND status = 'ghosted'",
+                tuple(job_ids),
+            )
+            ghosted_ids = {row[0] for row in cursor.fetchall()}
+            return [c for c in candidates if c["job_id"] in ghosted_ids]
+        except Exception:
+            conn.rollback()
+            logger.exception("Failed to ghost applications idle for %d days", idle_days)
+            return []
         finally:
             cursor.close()
 

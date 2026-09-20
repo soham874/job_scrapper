@@ -16,6 +16,7 @@ from common.applications import (
     TASK_PRESETS,
     status_label,
 )
+from common.config import GHOST_AFTER_DAYS
 
 
 def format_job_message(job: Dict[str, str], index: int = 0, total: int = 0,
@@ -140,6 +141,34 @@ def _truncate(text: str, limit: int = _BUTTON_TEXT_LIMIT) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+def _fmt_idle(app: dict) -> Optional[str]:
+    """The idle clock line, or None for an application that stopped counting.
+
+    days_idle comes back NULL for a rejected or ghosted application — the
+    clock only runs while there is still something to wait for. For the rest
+    it doubles as a countdown: silence past GHOST_AFTER_DAYS is what the
+    nightly sweep turns into a ghost, and the card is where that is worth
+    seeing before it happens.
+    """
+    days = app.get("days_idle")
+    if days is None:
+        return None
+    days = int(days)
+    if days <= 0:
+        quiet = "Touched today"
+    elif days == 1:
+        quiet = "Quiet for a day"
+    else:
+        quiet = f"Quiet for {days} days"
+
+    left = GHOST_AFTER_DAYS - days
+    if left <= 0:
+        return f"💤 {quiet} — ghosted at the next sweep"
+    if left <= 7:
+        return f"💤 {quiet} — ghosted in {left} day{'s' if left > 1 else ''}"
+    return f"💤 {quiet}"
+
+
 def format_job_card(app: dict) -> str:
     """The tracker's home screen for one application."""
     applied = _fmt_date(app.get("applied_on"))
@@ -157,6 +186,10 @@ def format_job_card(app: dict) -> str:
         lines.append(f"⏰ {_esc(task) or 'Follow up'} — {_fmt_date(next_date)}")
     else:
         lines.append("⏰ No reminder set")
+
+    idle = _fmt_idle(app)
+    if idle:
+        lines.append(idle)
 
     lines.append(f"👤 {_esc(app.get('poc')) or 'No contact yet'}")
 
@@ -314,6 +347,28 @@ def format_due_message(app: dict, reason: str) -> str:
         f"📌 {_esc(app.get('title'))}\n"
         f"📅 Applied {_fmt_date(app.get('applied_on'))}"
     )
+
+
+def format_ghost_summary(apps: List[dict], window_days: int, limit: int = 8) -> str:
+    """The chat summary for one ghosting pass.
+
+    apps carry the status each application had *before* the sweep, which is
+    the interesting part: a screening call that went quiet reads differently
+    from an application that was never acknowledged.
+    """
+    lines = [
+        f"👻 <b>{len(apps)} application(s) marked ghosted</b>",
+        f"<i>No movement for {window_days} days.</i>\n",
+    ]
+    for app in apps[:limit]:
+        lines.append(
+            f"• <b>{_esc(app.get('company'))}</b> — {_esc(app.get('title'))} "
+            f"<i>(was {status_label(app.get('status'))})</i>"
+        )
+    if len(apps) > limit:
+        lines.append(f"<i>…and {len(apps) - limit} more.</i>")
+    lines.append("\nTap one to reopen it if the company did come back.")
+    return "\n".join(lines)
 
 
 def format_stats(counts: dict) -> str:

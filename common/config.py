@@ -57,3 +57,26 @@ REMINDER_RENOTIFY_HOURS = int(os.getenv("REMINDER_RENOTIFY_HOURS", "24"))
 # Cap on nudges per pass. The first run after this ships could otherwise match
 # every application at once and arrive as a wall of messages.
 REMINDER_MAX_PER_RUN = int(os.getenv("REMINDER_MAX_PER_RUN", "10"))
+
+# --- Ghosting sweep --------------------------------------------------------
+# The reminder loop nudges; this one closes the file. An application nobody
+# has touched for GHOST_AFTER_DAYS is taken as never going to be answered and
+# is moved to 'ghosted', which stops its idle clock and drops it out of
+# /active, /today and the reminder loop.
+#
+# The clock is the same one the reminders read: application_status.updated_at,
+# which moves on any activity — a status change, a reminder, a contact — so
+# the window is 30 days of silence, not 30 days since applying.
+GHOST_AFTER_DAYS = int(os.getenv("GHOST_AFTER_DAYS", "30"))
+
+# Daily, at a fixed wall-clock time rather than every 24h from process start.
+# The pass reads whole days of idleness, so running it at a predictable hour
+# is what makes "30 days" mean the same thing on every run, however often the
+# bot process is restarted. Local time, 24h clock.
+GHOST_RUN_AT_HOUR = int(os.getenv("GHOST_RUN_AT_HOUR", "3"))
+GHOST_RUN_AT_MINUTE = int(os.getenv("GHOST_RUN_AT_MINUTE", "0"))
+
+# Whether to post a summary to Telegram when a pass ghosts something. A status
+# changing on its own is worth one line in the chat — the alternative is
+# discovering it from the dashboard weeks later.
+GHOST_NOTIFY = os.getenv("GHOST_NOTIFY", "true").lower() == "true"
