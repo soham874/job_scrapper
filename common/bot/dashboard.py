@@ -569,24 +569,17 @@ def dashboard(t: Optional[str] = Query(default=None)):
 
     total = sum(counts.values())
     live = sum(counts.get(s, 0) for s in ACTIVE_STATUSES)
-    sub = (f"{live} in play of {total} · silence past {GHOST_AFTER_DAYS} days is ghosted "
-           f"automatically · as of {datetime.now().strftime('%d %b, %H:%M')}")
+    sub = (f"{live} in play of {total} · as of {datetime.now().strftime('%d %b, %H:%M')}")
     if total > _ROW_LIMIT:
         sub += f" · showing the most recent {_ROW_LIMIT}"
 
-    note = (
-        "Deep links are disabled — the bot username could not be resolved, so company names are plain text."
-        if apps and not build_deep_link(apps[0]["job_id"])
-        else "Tap a company to open that application in Telegram, where you can change its status, "
-             "set a reminder, record a contact, or re-cut the resume."
-    )
     return HTMLResponse(_render(
         _PAGE,
         sub=html.escape(sub),
         chips=_chips(counts),
         table=table,
         live="[" + ", ".join(f'"{s}"' for s in ACTIVE_STATUSES) + "]",
-        note=html.escape(note),
+        # note=html.escape(note),
     ))
 
 
