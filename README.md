@@ -10,6 +10,7 @@ job-scrapper/
 │   ├── companies/       # Google Sheet fetch + company_info sync
 │   ├── config.py        # Shared constants (cron interval, borg stagger slots)
 │   ├── scheduling.py    # Per-borg run slots inside the cron interval
+│   ├── ghosting.py      # Daily sweep: idle applications become 'ghosted'
 │   └── logger.py        # Per-borg file + console logging
 ├── borgs/
 │   ├── workday/          # Workday borg
@@ -362,6 +363,75 @@ To clear a backlog immediately rather than waiting for the next tick:
 ```bash
 python3 run_scripts/run_sweeper.py
 ```
+
+### Tracking an application
+
+Applying writes a row to `application_status` and starts that application's
+**idle clock** — `updated_at`, the moment it last moved. Every touch restarts
+it: a status change, a follow-up date, a recorded contact. Silence does not.
+
+| Status | Meaning | Clock |
+|--------|---------|-------|
+| 📮 Applied | Sent, no reply yet | running |
+| 📞 Screening | Recruiter call or screen | running |
+| 💬 Interview | In the loop | running |
+| 🎉 Offer | Waiting on you | running |
+| ❌ Rejected | They said no | stopped |
+| 👻 Ghosted | They never said anything | stopped |
+
+The clock runs for every status except the two terminal ones. "Quiet for 94
+days" against an application that was already rejected is a question nobody
+is waiting on an answer to, so the dashboard, the job card and the JSON feed
+all show a dash there instead of a number.
+
+Two loops read that clock:
+
+- **Reminders** nudge an application whose follow-up date has arrived, or one
+  that has sat in the same status past its own patience window
+  (`common/applications.py`, `STALE_AFTER_DAYS` — an interview gone quiet for
+  a week is worth chasing; an application is not).
+- **Ghosting** is what happens when the nudges run out of road. Once a day it
+  moves everything idle past `GHOST_AFTER_DAYS` to `ghosted`, which stops the
+  clock, drops it out of `/active` and `/today`, and takes it off the reminder
+  loop. A summary goes to the chat with a button per application, so a wrong
+  call is one tap from being reopened — reopening restarts the clock from that
+  moment, it does not resume the old count.
+
+Both run inside the bot process. The ghost sweep runs at a fixed local time
+rather than every 24 hours from startup, so "30 days" means the same thing
+however often the process is restarted, plus once at startup to catch up.
+
+```
+# Days of silence before an application is marked ghosted
+GHOST_AFTER_DAYS=30
+# Local time of day the sweep runs (24h clock)
+GHOST_RUN_AT_HOUR=3
+GHOST_RUN_AT_MINUTE=0
+# Post a summary to Telegram when a pass ghosts something
+GHOST_NOTIFY=true
+```
+
+To run a pass by hand — after changing the window, or to clear a backlog:
+
+```bash
+python3 run_scripts/run_ghoster.py
+```
+
+### Dashboard
+
+The bot process also serves a read-only web view of the tracker at
+`/dashboard`, and the same rows as JSON at `/dashboard/data`. Set
+`DASHBOARD_TOKEN` and both need `?t=<token>`; leave it empty and anyone with
+the URL can read the page. There is no write path — every action happens in
+Telegram, which authenticates by chat id, and tapping a company name opens
+that application's card in the chat with its buttons already attached.
+
+The page is one server-rendered table: the status counts double as filters,
+the search box matches company, role, location, contact and job id, and the
+sortable columns reorder rows already in the page. Below 900px each row
+becomes a card so the company link stays reachable on a phone instead of
+hiding behind a horizontal scroll. The idle column is colour-coded by how
+close an application is to being ghosted.
 
 ## Logs
 

@@ -16,6 +16,7 @@ the whole schedule along behind it.
 import hashlib
 import threading
 import time
+from datetime import datetime, timedelta
 
 from common.config import BORG_ORDER, BORG_STAGGER_WINDOW_SECONDS, CRON_INTERVAL_SECONDS
 from common.logger import get_logger
@@ -57,3 +58,23 @@ def wait_for_next_run(borg_name: str, borg_logger) -> None:
     borg_logger.info("Sleeping %.0f seconds until next run (slot +%.0fs into a %ds interval)...",
                      delay, stagger_offset_seconds(borg_name), CRON_INTERVAL_SECONDS)
     threading.Event().wait(delay)
+
+
+def seconds_until_daily_slot(hour: int, minute: int = 0, now: datetime = None) -> float:
+    """Seconds to wait for the next local-time occurrence of hour:minute.
+
+    Used by the loops that mean "once a day" rather than "every 86400 seconds".
+    The difference shows up across restarts: an interval loop re-anchors itself
+    to whenever the process last came up, so a bot restarted each afternoon
+    would run a nightly pass at a different time every day — or, if it is
+    restarted more often than the interval, never. Aiming at a wall-clock time
+    keeps the pass where it was put.
+
+    Returns a full day when the slot has just gone by, never 0, so a loop that
+    calls this immediately after running cannot spin.
+    """
+    now = datetime.now() if now is None else now
+    slot = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if slot <= now:
+        slot += timedelta(days=1)
+    return (slot - now).total_seconds()
