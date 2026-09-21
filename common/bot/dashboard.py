@@ -14,10 +14,12 @@ The page is one server-rendered table. Filtering, search and sorting run in
 the browser over rows that are already there: the whole history is a few
 hundred rows, so a round trip per keystroke would buy nothing, and with
 JavaScript off the table still renders complete and readable.
+
+It is one of two tabs, the other being common.bot.analytics. The frame they
+share — palette, type, header, tab strip, filter row and the URL token — lives
+in common.bot.webui; what is below is only this page's table.
 """
 
-import html
-import os
 from datetime import datetime
 from typing import Optional
 
@@ -26,6 +28,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from common.applications import ACTIVE_STATUSES, STATUS_EMOJI, STATUSES, status_label
 from common.bot.deeplinks import build_deep_link
+from common.bot.webui import authorized, document, e, render
 from common.config import GHOST_AFTER_DAYS
 from common.db.repository import get_active_applications, get_status_counts
 from common.logger import get_logger
@@ -34,23 +37,10 @@ logger = get_logger("bot.dashboard")
 
 router = APIRouter()
 
-# Optional shared secret. Unset serves the page to anyone who finds the URL —
-# fine behind a private network or tunnel, not on the public host the webhook
-# needs. Set it and the page requires ?t=<token>.
-DASHBOARD_TOKEN = os.getenv("DASHBOARD_TOKEN", "")
-
 # Everything, not just what is live: the point of the page is the whole history
 # at a glance. The bot's /active is the filtered view.
 _ALL_STATUSES = tuple(STATUSES)
 _ROW_LIMIT = 500
-
-
-def _authorized(token: Optional[str]) -> bool:
-    return not DASHBOARD_TOKEN or token == DASHBOARD_TOKEN
-
-
-def _e(value) -> str:
-    return html.escape(str(value)) if value not in (None, "") else ""
 
 
 def _fmt_date(value) -> str:
@@ -112,7 +102,7 @@ def _idle_cell(app: dict) -> str:
         tone, tip = "idle-warn", f"Ghosted in {left} days unless something moves"
     else:
         tone, tip = "idle-ok", f"{left} days of silence left before this is ghosted"
-    return f'<span class="idle {tone}" title="{_e(tip)}">{idle}d</span>'
+    return f'<span class="idle {tone}" title="{e(tip)}">{idle}d</span>'
 
 
 def _row(app: dict) -> str:
@@ -128,19 +118,19 @@ def _row(app: dict) -> str:
     """
     status = app.get("status") or ""
     link = build_deep_link(app["job_id"])
-    company = _e(app.get("company")) or "—"
-    company_cell = f'<a class="tg" href="{_e(link)}">{company}</a>' if link else company
+    company = e(app.get("company")) or "—"
+    company_cell = f'<a class="tg" href="{e(link)}">{company}</a>' if link else company
 
     posting = app.get("application_link")
     posting_cell = (
-        f'<a class="ext" href="{_e(posting)}" target="_blank" rel="noopener">Posting ↗</a>'
+        f'<a class="ext" href="{e(posting)}" target="_blank" rel="noopener">Posting ↗</a>'
         if posting else '<span class="muted">—</span>'
     )
 
     # A task with no date is what the picker leaves behind when a follow-up is
     # cleared, and rendering it under a dash reads as two missing values rather
     # than one thing still to do.
-    task = _e(app.get("next_important_task"))
+    task = e(app.get("next_important_task"))
     next_date = app.get("next_important_date")
     if next_date:
         next_cell = _fmt_date(next_date)
@@ -160,22 +150,22 @@ def _row(app: dict) -> str:
                         ("company", "title", "location", "poc", "next_important_task"))
     haystack = f"{haystack} {_ats_job_id(app)} {STATUSES.get(status, status)}".lower()
 
-    return f"""<tr data-status="{_e(status)}" data-search="{_e(haystack)}"
-      data-company="{_e((app.get('company') or '').lower())}"
+    return f"""<tr data-status="{e(status)}" data-search="{e(haystack)}"
+      data-company="{e((app.get('company') or '').lower())}"
       data-applied="{_iso(app.get('applied_on'))}"
       data-next="{_iso(next_date)}"
       data-idle="{'' if app.get('days_idle') is None else int(app['days_idle'])}">
-      <td class="c-status" data-l="Status"><span class="pill s-{_e(status)}">{_e(STATUS_EMOJI.get(status, ''))} {_e(STATUSES.get(status, status))}</span></td>
+      <td class="c-status" data-l="Status"><span class="pill s-{e(status)}">{e(STATUS_EMOJI.get(status, ''))} {e(STATUSES.get(status, status))}</span></td>
       <td class="c-app" data-l="Application">
         <span class="company">{company_cell}</span>
-        <span class="role">{_e(app.get('title')) or '—'}</span>
-        <span class="loc">{_e(app.get('location')) or '—'}</span>
+        <span class="role">{e(app.get('title')) or '—'}</span>
+        <span class="loc">{e(app.get('location')) or '—'}</span>
       </td>
-      <td class="c-id" data-l="Job ID"><span class="mono">{_e(_ats_job_id(app))}</span></td>
+      <td class="c-id" data-l="Job ID"><span class="mono">{e(_ats_job_id(app))}</span></td>
       <td class="c-applied" data-l="Applied">{applied_cell}</td>
       <td class="c-idle" data-l="Idle">{_idle_cell(app)}</td>
       <td class="c-next" data-l="Next">{next_cell}</td>
-      <td class="c-poc" data-l="Contact">{_e(app.get('poc')) or '<span class="muted">—</span>'}</td>
+      <td class="c-poc" data-l="Contact">{e(app.get('poc')) or '<span class="muted">—</span>'}</td>
       <td class="c-link" data-l="Posting">{posting_cell}</td>
     </tr>"""
 
@@ -217,57 +207,10 @@ _HEAD = """<table id="grid"><thead><tr>
 </tr></thead><tbody>"""
 
 
-# Placeholders are HTML comments rather than str.format fields: the CSS and the
-# script below are full of braces, and doubling every one of them to survive
-# .format() is how a stylesheet quietly acquires a syntax error.
-_PAGE = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="light dark">
-<title>Application tracker</title>
-<style>
-  :root {
-    --bg:#fbfbfa; --fg:#1a1a18; --muted:#6b6b66; --faint:#8d8d86;
-    --line:#e4e4e0; --card:#ffffff; --raised:#f4f4f1;
-    --accent:#2f6f4f; --accent-soft:#e6f1ea;
-    --ok:#2f6f4f; --ok-bg:#e8f2ec; --warn:#8a6116; --warn-bg:#faefd9;
-    --hot:#a33a2a; --hot-bg:#fbe9e5;
-    --shadow:0 1px 2px rgba(0,0,0,.05); --radius:12px; --gutter:16px;
-  }
-  @supports (padding: max(0px)) {
-    :root { --gutter: max(16px, env(safe-area-inset-left)); }
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg:#141417; --fg:#e9e9e5; --muted:#9a9a94; --faint:#7c7c76;
-      --line:#2b2b31; --card:#1d1d22; --raised:#26262c;
-      --accent:#7fc4a0; --accent-soft:#1e3a2c;
-      --ok:#7fc4a0; --ok-bg:#1c3328; --warn:#e0b767; --warn-bg:#332912;
-      --hot:#f0907c; --hot-bg:#3a1f1a;
-      --shadow:none;
-    }
-  }
-  * { box-sizing:border-box; }
-  html { -webkit-text-size-adjust:100%; }
-  body {
-    margin:0; background:var(--bg); color:var(--fg);
-    font:15px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Inter,sans-serif;
-    padding:18px var(--gutter) calc(48px + env(safe-area-inset-bottom));
-    overflow-x:hidden;
-  }
-  .shell { max-width:1280px; margin:0 auto; }
-  h1 { font-size:19px; margin:0; letter-spacing:-.01em; }
-  .sub { color:var(--muted); font-size:12.5px; margin:3px 0 0; }
-
-  /* The filters stay put; the title does not. On a long list the control you
-     reach for is the one you want after scrolling, and a heading that stays
-     pinned only costs height — which on a phone is the scarce thing. */
-  .toolbar {
-    position:sticky; top:0; z-index:5; background:var(--bg);
-    display:flex; align-items:center; gap:12px;
-    margin:12px calc(-1 * var(--gutter)) 0;
-    padding:8px var(--gutter); border-bottom:1px solid var(--line);
-  }
+# The page's own CSS. The palette, the type, the header, the tab strip and
+# the filter row live in common.bot.webui — everything below is the table
+# and the cells inside it, which no other page has.
+_CSS = """
   .search { flex:0 0 280px; min-width:0; position:relative; }
   .search input {
     width:100%; font:inherit; font-size:14px; color:var(--fg);
@@ -278,28 +221,6 @@ _PAGE = """<!doctype html>
   .search svg { position:absolute; left:13px; top:50%; transform:translateY(-50%);
     width:14px; height:14px; stroke:var(--faint); fill:none; stroke-width:2; pointer-events:none; }
   .search input:focus-visible { outline:2px solid var(--accent); outline-offset:1px; border-color:transparent; }
-
-  /* One scrolling row rather than a wrapped block: the chips are a single
-     control, and letting them stack pushes the table off a small screen. */
-  .chips {
-    flex:1 1 auto; display:flex; gap:8px; min-width:0;
-    overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch;
-    padding:2px 0;
-  }
-  .chips::-webkit-scrollbar { display:none; }
-  .chip {
-    flex:0 0 auto; display:flex; flex-direction:column; gap:1px; align-items:flex-start;
-    background:var(--card); border:1px solid var(--line); border-radius:10px;
-    padding:6px 11px; min-width:72px; min-height:44px; cursor:pointer;
-    font:inherit; color:inherit; text-align:left; box-shadow:var(--shadow);
-    transition:border-color .12s, background .12s;
-  }
-  .chip:hover { border-color:var(--accent); }
-  .chip .n { font-size:16px; font-weight:600; line-height:1.2; font-variant-numeric:tabular-nums; }
-  .chip .k { font-size:10.5px; color:var(--muted); text-transform:lowercase; white-space:nowrap; }
-  .chip.is-on { background:var(--accent-soft); border-color:var(--accent); }
-  .chip.is-on .k { color:var(--accent); }
-  .chip:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 
   /* clip, not hidden: `hidden` would make this a scroll container, and the
      sticky table header inside it would then be pinned to a box that never
@@ -343,10 +264,6 @@ _PAGE = """<!doctype html>
   .role { display:block; }
   .loc, .sub-line { display:block; color:var(--muted); font-size:11.5px; }
   .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; color:var(--muted); }
-  .muted { color:var(--muted); }
-  a { color:var(--accent); text-decoration:none; }
-  a:hover { text-decoration:underline; }
-  a:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
 
   .pill { display:inline-block; font-size:11.5px; padding:3px 9px; border-radius:999px;
     border:1px solid var(--line); background:var(--raised); white-space:nowrap; }
@@ -365,10 +282,6 @@ _PAGE = """<!doctype html>
   .idle-warn { background:var(--warn-bg); color:var(--warn); }
   .idle-hot { background:var(--hot-bg); color:var(--hot); font-weight:600; }
   .idle-off { color:var(--faint); }
-
-  .empty { padding:44px 20px; text-align:center; color:var(--muted); }
-  footer { color:var(--muted); font-size:12px; margin:14px 0 0; max-width:70ch; }
-  [hidden] { display:none !important; }
 
   /* Laptop windows: padding, not content, is what pushes eight columns past
      the viewport here — tighten the gutters before dropping anything. */
@@ -412,19 +325,11 @@ _PAGE = """<!doctype html>
 
   @media (max-width:360px) {
     tbody tr { padding:11px 12px; }
-    .chip { min-width:66px; padding:6px 9px; }
   }
+"""
 
-  @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
-</style></head>
-<body>
-<div class="shell">
-<header>
-  <h1>Application tracker</h1>
-  <p class="sub"><!--SUB--></p>
-</header>
 
-<div class="toolbar">
+_BODY = """<div class="toolbar">
   <div class="chips" role="group" aria-label="Filter by status"><!--CHIPS--></div>
   <div class="search">
     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
@@ -434,12 +339,10 @@ _PAGE = """<!doctype html>
 </div>
 
 <div class="wrap"><!--TABLE--></div>
-<p class="empty" id="noresults" hidden>Nothing matches that filter.</p>
-<footer><!--NOTE--></footer>
-</div>
+<p class="empty" id="noresults" hidden>Nothing matches that filter.</p>"""
 
-<script>
-(function () {
+
+_SCRIPT = """(function () {
   var toolbar = document.querySelector('.toolbar');
   var grid = document.getElementById('grid');
 
@@ -541,21 +444,13 @@ _PAGE = """<!doctype html>
     var chip = chips.filter(function (c) { return c.getAttribute('data-filter') === saved; })[0];
     if (chip) chip.click();
   }
-})();
-</script>
-</body></html>"""
-
-
-def _render(page: str, **parts) -> str:
-    for name, value in parts.items():
-        page = page.replace(f"<!--{name.upper()}-->", value)
-    return page
+})();"""
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
 def dashboard(t: Optional[str] = Query(default=None)):
     """The tracker as one page."""
-    if not _authorized(t):
+    if not authorized(t):
         return HTMLResponse("Not found", status_code=404)
 
     apps = get_active_applications(_ALL_STATUSES, limit=_ROW_LIMIT, offset=0)
@@ -573,20 +468,27 @@ def dashboard(t: Optional[str] = Query(default=None)):
     if total > _ROW_LIMIT:
         sub += f" · showing the most recent {_ROW_LIMIT}"
 
-    return HTMLResponse(_render(
-        _PAGE,
-        sub=html.escape(sub),
-        chips=_chips(counts),
-        table=table,
-        live="[" + ", ".join(f'"{s}"' for s in ACTIVE_STATUSES) + "]",
-        # note=html.escape(note),
+    body = render(_BODY, chips=_chips(counts), table=table)
+    script = render(
+        _SCRIPT,
+        live="[" + ", ".join(f'"{status}"' for status in ACTIVE_STATUSES) + "]",
+    )
+    return HTMLResponse(document(
+        title="Application tracker",
+        heading="Application tracker",
+        sub=sub,
+        active="/dashboard",
+        token=t,
+        css=_CSS,
+        body=body,
+        script=script,
     ))
 
 
 @router.get("/dashboard/data")
 def dashboard_data(t: Optional[str] = Query(default=None)):
     """Same rows as JSON, for anything that would rather not scrape HTML."""
-    if not _authorized(t):
+    if not authorized(t):
         return JSONResponse({"error": "not found"}, status_code=404)
     apps = get_active_applications(_ALL_STATUSES, limit=_ROW_LIMIT, offset=0)
     for app in apps:

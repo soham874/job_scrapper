@@ -851,3 +851,180 @@ def get_status_counts() -> dict:
         finally:
             cursor.close()
     return {r[0]: r[1] for r in rows}
+
+
+# ---------------------------------------------------------------------------
+# Analytics (V019)
+#
+# Everything below counts rows in job_info, which is the record of what the
+# borgs found — not what an ATS says about itself. Two consequences worth
+# holding on to when reading the numbers:
+#
+#   * The date is created_ts, the moment a job first appeared in a scrape.
+#     No ATS in this project reports a posting date, so "first seen" is the
+#     closest thing to one that exists. A board that publishes a backlog on
+#     the day a company is switched on will show that day as a spike.
+#
+#   * A job only exists here if some borg was running for its company. A
+#     company disabled halfway through the window stops contributing from
+#     that point, and nothing in the row records why.
+#
+# The window is whole days, inclusive of today, measured on the database's
+# clock rather than the process's — the daily buckets and the range the page
+# claims to show then come from the same calendar, however the two machines
+# are configured.
+# ---------------------------------------------------------------------------
+
+# CURDATE() - INTERVAL (days - 1) DAY: `days` buckets counting today as one of
+# them, so "last 30 days" is 30 columns on the chart rather than 31.
+_WINDOW_START_SQL = "CURDATE() - INTERVAL %s DAY"
+
+
+def get_posting_summary(days: int) -> dict:
+    """
+    Headline counts for the window: how many tracked companies there are, how
+    many of them posted anything, and how many jobs that came to.
+
+    One statement rather than three so every figure — and the window the page
+    prints — is read off a single snapshot of the same clock.
+    """
+    span = max(int(days), 1) - 1
+    with get_connection() as conn:
+        cursor = conn.cursor(buffered=True)
+        try:
+            cursor.execute(
+                "SELECT "
+                "  (SELECT COUNT(*) FROM company_info WHERE enabled = 1), "
+                "  (SELECT COUNT(DISTINCT j.company_id) FROM job_info j "
+                "     JOIN company_info c ON c.id = j.company_id "
+                f"    WHERE c.enabled = 1 AND j.created_ts >= {_WINDOW_START_SQL}), "
+                "  (SELECT COUNT(*) FROM job_info j "
+                "     JOIN company_info c ON c.id = j.company_id "
+                f"    WHERE c.enabled = 1 AND j.created_ts >= {_WINDOW_START_SQL}), "
+                f" {_WINDOW_START_SQL}, CURDATE()",
+                (span, span, span),
+            )
+            row = cursor.fetchone()
+        finally:
+            cursor.close()
+    if not row:
+        return {"enabled_companies": 0, "posting_companies": 0, "jobs": 0,
+                "window_start": None, "window_end": None}
+    return {
+        "enabled_companies": row[0] or 0,
+        "posting_companies": row[1] or 0,
+        "jobs": row[2] or 0,
+        "window_start": row[3],
+        "window_end": row[4],
+    }
+
+
+def get_top_companies_by_jobs(days: int, limit: int = 5) -> list:
+    """
+    The tracked companies that posted the most in the window, busiest first.
+
+    Ties break on name so a redraw with unchanged data does not reshuffle the
+    bars — MySQL is free to return equal counts in any order otherwise.
+    """
+    span = max(int(days), 1) - 1
+    with get_connection() as conn:
+        cursor = conn.cursor(buffered=True)
+        try:
+            cursor.execute(
+                "SELECT c.company_name, COUNT(*) AS jobs FROM job_info j "
+                "JOIN company_info c ON c.id = j.company_id "
+                f"WHERE c.enabled = 1 AND j.created_ts >= {_WINDOW_START_SQL} "
+                "GROUP BY c.id, c.company_name "
+                "ORDER BY jobs DESC, c.company_name ASC LIMIT %s",
+                (span, int(limit)),
+            )
+            rows = cursor.fetchall()
+        finally:
+            cursor.close()
+    return [{"company": r[0], "jobs": r[1]} for r in rows]
+
+
+def get_jobs_per_day_by_company(days: int) -> list:
+    """
+    One row per (day, company) that saw a job in the window.
+
+    Deliberately not pivoted or zero-filled here: the days a company posted
+    nothing are absent, and the page fills them in against the axis it is
+    already drawing. Sparse rows are also what keeps this small — a hundred
+    companies over ninety days is at most a few thousand rows, and in practice
+    far fewer, because most companies post on a handful of days.
+    """
+    span = max(int(days), 1) - 1
+    with get_connection() as conn:
+        cursor = conn.cursor(buffered=True)
+        try:
+            cursor.execute(
+                "SELECT DATE(j.created_ts) AS day, c.company_name, COUNT(*) FROM job_info j "
+                "JOIN company_info c ON c.id = j.company_id "
+                f"WHERE c.enabled = 1 AND j.created_ts >= {_WINDOW_START_SQL} "
+                "GROUP BY day, c.id, c.company_name ORDER BY day ASC",
+                (span,),
+            )
+            rows = cursor.fetchall()
+        finally:
+            cursor.close()
+    return [{"day": r[0], "company": r[1], "jobs": r[2]} for r in rows]
+
+
+def get_ats_job_stats(days: int) -> dict:
+    """
+    Jobs per ATS in the window, against the total across every ATS.
+
+    Two queries because they answer different halves of the question. The
+    first is the denominator and the per-ATS counts, over *all* jobs — a
+    company switched off last week still posted what it posted, and dropping
+    it would quietly shrink the total the shares are taken against. The second
+    is which ATS integrations are currently switched on, which is what decides
+    whether an ATS appears at all.
+
+    An enabled ATS with no jobs in the window is a row of zeroes rather than a
+    missing row: "greenhouse found nothing this month" is a result, and an
+    absent line reads as an integration that was never configured.
+
+    Returns {'total_jobs': int, 'rows': [...]} with one row per ATS, each
+    carrying jobs, the share of total, how many enabled companies use it, and
+    `tracked` — False for an ATS that only shows up through companies that are
+    now disabled, which is how history stays in the total without pretending
+    the integration is live.
+    """
+    span = max(int(days), 1) - 1
+    with get_connection() as conn:
+        cursor = conn.cursor(buffered=True)
+        try:
+            cursor.execute(
+                "SELECT c.ats, COUNT(*) FROM job_info j "
+                "JOIN company_info c ON c.id = j.company_id "
+                f"WHERE j.created_ts >= {_WINDOW_START_SQL} "
+                "GROUP BY c.ats",
+                (span,),
+            )
+            counts = {(r[0] or ""): r[1] for r in cursor.fetchall()}
+
+            cursor.execute(
+                "SELECT ats, COUNT(*) FROM company_info "
+                "WHERE enabled = 1 AND ats IS NOT NULL AND ats != '' GROUP BY ats"
+            )
+            enabled = {r[0]: r[1] for r in cursor.fetchall()}
+        finally:
+            cursor.close()
+
+    total = sum(counts.values())
+    rows = []
+    for ats in sorted(set(enabled) | set(k for k in counts if k)):
+        jobs = counts.get(ats, 0)
+        rows.append({
+            "ats": ats,
+            "jobs": jobs,
+            "share": (jobs / total) if total else 0.0,
+            "enabled_companies": enabled.get(ats, 0),
+            "tracked": ats in enabled,
+        })
+    # Busiest first, but a tracked ATS never sinks below an untracked one with
+    # more history — the switched-on integrations are the subject of the panel.
+    rows.sort(key=lambda r: (not r["tracked"], -r["jobs"], r["ats"]))
+    return {"total_jobs": total, "rows": rows}

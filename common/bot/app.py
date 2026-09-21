@@ -12,6 +12,7 @@ import requests
 from fastapi import FastAPI, Request
 
 from common.bot import router
+from common.bot.analytics import router as analytics_router
 from common.bot.dashboard import router as dashboard_router
 from common.bot.deeplinks import resolve_bot_username
 from common.logger import get_logger
@@ -88,9 +89,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Job Scrapper Bot", lifespan=lifespan)
 
-# Read-only view of the tracker. Kept in its own module because it shares
-# nothing with the webhook but the process it runs in.
+# Read-only views of the data, in their own modules because they share
+# nothing with the webhook but the process they run in. Two tabs of one site:
+# the tracker, and the analytics over what the borgs have found.
 app.include_router(dashboard_router)
+app.include_router(analytics_router)
 
 
 @app.get("/health")
