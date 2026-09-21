@@ -417,14 +417,19 @@ To run a pass by hand — after changing the window, or to clear a backlog:
 python3 run_scripts/run_ghoster.py
 ```
 
-### Dashboard
+### Web pages
 
-The bot process also serves a read-only web view of the tracker at
-`/dashboard`, and the same rows as JSON at `/dashboard/data`. Set
-`DASHBOARD_TOKEN` and both need `?t=<token>`; leave it empty and anyone with
-the URL can read the page. There is no write path — every action happens in
-Telegram, which authenticates by chat id, and tapping a company name opens
-that application's card in the chat with its buttons already attached.
+The bot process also serves two read-only web pages, linked to each other by
+a tab strip at the top of both. Set `DASHBOARD_TOKEN` and every page and feed
+needs `?t=<token>`; leave it empty and anyone with the URL can read them.
+There is no write path anywhere — every action happens in Telegram, which
+authenticates by chat id.
+
+#### `/dashboard` — the application tracker
+
+The tracker, plus the same rows as JSON at `/dashboard/data`. Tapping a
+company name opens that application's card in the chat with its buttons
+already attached.
 
 The page is one server-rendered table: the status counts double as filters,
 the search box matches company, role, location, contact and job id, and the
@@ -432,6 +437,40 @@ sortable columns reorder rows already in the page. Below 900px each row
 becomes a card so the company link stays reachable on a phone instead of
 hiding behind a horizontal scroll. The idle column is colour-coded by how
 close an application is to being ghosted.
+
+#### `/analytics` — what the borgs are finding
+
+Where the tracker answers "where are my applications?", this answers "is
+there anything to apply to?". The same figures are available as JSON at
+`/analytics/data`.
+
+One date range at the top — 7, 30, 90 or 180 days — scopes the whole page, so
+no two numbers on it are ever read off different slices. It is a link rather
+than a control, so it survives JavaScript being off and can be bookmarked.
+
+| Panel | What it shows |
+|-------|---------------|
+| Company posting activity | *x out of y tracked companies posted at least one job*, plus the job count and the busiest day in the window. |
+| Busiest companies | The five tracked companies that posted the most, as bars measured against the busiest of them. |
+| Jobs per day | A line chart of jobs against date. With no company picked it is every tracked company added together; add companies and each gets its own line in the same chart, up to eight. |
+| Jobs by ATS | For every enabled ATS, how many jobs came through it and what share of the window's total that is. An enabled ATS that found nothing is a zero row, not a missing one. |
+
+The company filter is a text box with autocomplete over the companies that
+posted in the window; picks are remembered in the browser between visits, and
+each company keeps its colour when another is removed. Every value in the
+chart is also in the table under it ("Show the numbers"), which is what the
+page falls back to with JavaScript off.
+
+Two things to hold on to when reading any of it:
+
+* **The date is when a job was first seen by a scrape, not when it was
+  posted.** No ATS here reports a posting date. A company switched on
+  mid-window contributes only from the point its borg started running, and a
+  board whose backlog is published on day one shows that day as a spike.
+* **The ATS share is taken against every job in the window**, including jobs
+  from companies that have since been disabled — their history is real and
+  dropping it would quietly shrink the denominator. Such an ATS appears
+  marked "history only" rather than as a live integration.
 
 ## Logs
 
